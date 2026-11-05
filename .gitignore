@@ -1,0 +1,34 @@
+# Go build output
+/bin/
+/dist/
+/tmp/
+*.exe
+*.test
+*.out
+coverage.*
+
+# Local data
+*.db
+*.db-shm
+*.db-wal
+
+# Embedded UI build output (keep the placeholder so `go build` works on a fresh clone)
+/internal/webui/dist/*
+!/internal/webui/dist/.gitkeep
+
+# Node
+node_modules/
+web/.vite/
+*.tsbuildinfo
+
+# Editors / OS
+.idea/
+.vscode/*
+!.vscode/extensions.json
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+.env.*
+!.env.example

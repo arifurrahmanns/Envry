@@ -1,0 +1,159 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * Neutral surfaces with a near-black primary action. Orange (--brand) is
+ * reserved for small accents: unread markers and the live indicator.
+ */
+:root {
+  --radius: 0.625rem;
+  --canvas: oklch(0.925 0 0);
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.235 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.235 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.235 0 0);
+  --primary: oklch(0.27 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.235 0 0);
+  --muted: oklch(0.968 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.962 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.3);
+  --border: oklch(0.925 0 0);
+  --input: oklch(0.905 0 0);
+  --ring: oklch(0.708 0 0);
+  --brand: oklch(0.646 0.222 41.1);
+  --brand-foreground: oklch(0.985 0 0);
+  --info: oklch(0.6 0.17 250);
+  --banner-from: oklch(0.9 0.045 235);
+  --banner-to: oklch(0.975 0.012 220);
+  /* Emails are designed for white; the preview canvas stays white. */
+  --email-canvas: oklch(1 0 0);
+  --sidebar: oklch(1 0 0);
+  --sidebar-foreground: oklch(0.235 0 0);
+  --sidebar-primary: oklch(0.27 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.968 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.925 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+
+  /* Avatar fallbacks: soft tint background, deeper text of the same hue. */
+  --avatar-1-bg: oklch(0.9 0.06 300);
+  --avatar-1-fg: oklch(0.42 0.15 300);
+  --avatar-2-bg: oklch(0.9 0.05 250);
+  --avatar-2-fg: oklch(0.42 0.14 250);
+  --avatar-3-bg: oklch(0.91 0.06 160);
+  --avatar-3-fg: oklch(0.42 0.1 160);
+  --avatar-4-bg: oklch(0.92 0.07 75);
+  --avatar-4-fg: oklch(0.45 0.11 60);
+  --avatar-5-bg: oklch(0.91 0.05 15);
+  --avatar-5-fg: oklch(0.45 0.15 20);
+  --avatar-6-bg: oklch(0.91 0.05 200);
+  --avatar-6-fg: oklch(0.42 0.09 210);
+}
+
+.dark {
+  --canvas: oklch(0.1 0 0);
+  --background: oklch(0.155 0 0);
+  --foreground: oklch(0.955 0 0);
+  --card: oklch(0.175 0 0);
+  --card-foreground: oklch(0.955 0 0);
+  --popover: oklch(0.2 0 0);
+  --popover-foreground: oklch(0.955 0 0);
+  --primary: oklch(0.93 0 0);
+  --primary-foreground: oklch(0.2 0 0);
+  --secondary: oklch(0.24 0 0);
+  --secondary-foreground: oklch(0.955 0 0);
+  --muted: oklch(0.225 0 0);
+  --muted-foreground: oklch(0.68 0 0);
+  --accent: oklch(0.235 0 0);
+  --accent-foreground: oklch(0.955 0 0);
+  --destructive: oklch(0.704 0.191 22.2);
+  --border: oklch(1 0 0 / 9%);
+  --input: oklch(1 0 0 / 14%);
+  --ring: oklch(0.556 0 0);
+  --brand: oklch(0.705 0.213 47.6);
+  --brand-foreground: oklch(0.155 0 0);
+  --info: oklch(0.7 0.15 250);
+  --banner-from: oklch(0.3 0.06 250);
+  --banner-to: oklch(0.2 0.02 250);
+  --email-canvas: oklch(1 0 0);
+  --sidebar: oklch(0.155 0 0);
+  --sidebar-foreground: oklch(0.955 0 0);
+  --sidebar-primary: oklch(0.93 0 0);
+  --sidebar-primary-foreground: oklch(0.2 0 0);
+  --sidebar-accent: oklch(0.225 0 0);
+  --sidebar-accent-foreground: oklch(0.955 0 0);
+  --sidebar-border: oklch(1 0 0 / 9%);
+  --sidebar-ring: oklch(0.556 0 0);
+
+  --avatar-1-bg: oklch(0.33 0.07 300);
+  --avatar-1-fg: oklch(0.88 0.07 300);
+  --avatar-2-bg: oklch(0.33 0.06 250);
+  --avatar-2-fg: oklch(0.88 0.06 250);
+  --avatar-3-bg: oklch(0.33 0.05 160);
+  --avatar-3-fg: oklch(0.88 0.07 160);
+  --avatar-4-bg: oklch(0.35 0.06 70);
+  --avatar-4-fg: oklch(0.9 0.08 75);
+  --avatar-5-bg: oklch(0.33 0.07 15);
+  --avatar-5-fg: oklch(0.88 0.06 15);
+  --avatar-6-bg: oklch(0.33 0.05 210);
+  --avatar-6-fg: oklch(0.88 0.06 200);
+}
+
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-brand: var(--brand);
+  --color-brand-foreground: var(--brand-foreground);
+  --color-info: var(--info);
+  --color-banner-from: var(--banner-from);
+  --color-banner-to: var(--banner-to);
+  --color-email-canvas: var(--email-canvas);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  /* Self-hosted via @fontsource-variable so the UI works fully offline. */
+  --font-sans: "Geist Variable", "Geist", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono Variable", "Geist Mono", ui-monospace, monospace;
+}
+
+@layer base {
+  * { @apply border-border outline-ring/50; }
+  html, body, #root { @apply h-full; }
+  body { @apply bg-canvas text-foreground antialiased; }
+}
