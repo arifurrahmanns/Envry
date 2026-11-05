@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -28,13 +29,43 @@ type Server struct {
 	bus   *events.Bus
 	log   *slog.Logger
 
+	tls   *TLSInfo // nil unless TLS is enabled
+	ports *Ports   // bound ports, once known
+
 	closeOnce sync.Once
 	closing   chan struct{}
+}
+
+// TLSInfo describes the certificate the mail servers present.
+type TLSInfo struct {
+	SelfSigned  bool      `json:"selfSigned"`
+	Fingerprint string    `json:"fingerprint"` // SHA-256
+	Expires     time.Time `json:"expires"`
 }
 
 // New returns an API server.
 func New(cfg *config.Config, st *store.Store, log *slog.Logger) *Server {
 	return &Server{cfg: cfg, store: st, bus: st.Bus(), log: log, closing: make(chan struct{})}
+}
+
+// SetTLS reports TLS details in /api/v1/info. Call before serving.
+func (s *Server) SetTLS(info TLSInfo) { s.tls = &info }
+
+// SetPorts reports the ports actually bound (which differ from the
+// configuration when it asks for port 0). Call before serving.
+func (s *Server) SetPorts(p Ports) { s.ports = &p }
+
+func (s *Server) configuredPorts() Ports {
+	p := Ports{
+		SMTP: port(s.cfg.SMTPAddr),
+		POP3: port(s.cfg.POP3Addr),
+		IMAP: port(s.cfg.IMAPAddr),
+		HTTP: port(s.cfg.HTTPAddr),
+	}
+	if s.tls != nil {
+		p.SMTPS, p.POP3S, p.IMAPS = port(s.cfg.SMTPSAddr), port(s.cfg.POP3SAddr), port(s.cfg.IMAPSAddr)
+	}
+	return p
 }
 
 // Close ends long-lived requests (/ws, /wait) so the HTTP server can shut
@@ -82,11 +113,21 @@ func (s *Server) Routes() http.Handler {
 	return r
 }
 
-type portsDTO struct {
+// Ports are the listening ports reported by /api/v1/info.
+type Ports struct {
 	SMTP int `json:"smtp"`
 	POP3 int `json:"pop3"`
 	IMAP int `json:"imap"`
 	HTTP int `json:"http"`
+	// Implicit-TLS ports; 0 when TLS is off.
+	SMTPS int `json:"smtps"`
+	POP3S int `json:"pop3s"`
+	IMAPS int `json:"imaps"`
+}
+
+type tlsDTO struct {
+	Enabled bool `json:"enabled"`
+	*TLSInfo
 }
 
 type settingsDTO struct {
@@ -98,7 +139,8 @@ type settingsDTO struct {
 type infoDTO struct {
 	Version  string      `json:"version"`
 	Commit   string      `json:"commit"`
-	Ports    portsDTO    `json:"ports"`
+	Ports    Ports       `json:"ports"`
+	TLS      tlsDTO      `json:"tls"`
 	Settings settingsDTO `json:"settings"`
 	Stats    store.Stats `json:"stats"`
 }
@@ -109,15 +151,15 @@ func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, err)
 		return
 	}
+	ports := s.configuredPorts()
+	if s.ports != nil {
+		ports = *s.ports
+	}
 	writeJSON(w, http.StatusOK, infoDTO{
 		Version: version.Version,
 		Commit:  version.Commit,
-		Ports: portsDTO{
-			SMTP: port(s.cfg.SMTPAddr),
-			POP3: port(s.cfg.POP3Addr),
-			IMAP: port(s.cfg.IMAPAddr),
-			HTTP: port(s.cfg.HTTPAddr),
-		},
+		Ports:   ports,
+		TLS:     tlsDTO{Enabled: s.tls != nil, TLSInfo: s.tls},
 		Settings: settingsDTO{
 			MaxMessages: s.cfg.MaxMessages,
 			MaxSize:     s.cfg.MaxSize,

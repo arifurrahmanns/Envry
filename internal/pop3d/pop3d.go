@@ -11,6 +11,7 @@ import (
 	"context"
 	"crypto/md5"
 	"crypto/subtle"
+	"crypto/tls"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -38,6 +39,9 @@ const (
 type Options struct {
 	// StrictAuth requires an account's password (USER/PASS or APOP).
 	StrictAuth bool
+	// TLSConfig enables STLS (RFC 2595). Implicit TLS (POP3S) is served by
+	// passing a TLS listener to Serve.
+	TLSConfig *tls.Config
 	// Hostname appears in the greeting's APOP timestamp.
 	Hostname    string
 	IdleTimeout time.Duration
@@ -50,12 +54,12 @@ type Server struct {
 	opts  Options
 	log   *slog.Logger
 
-	mu       sync.Mutex
-	ln       net.Listener
-	conns    map[net.Conn]struct{}
-	locked   map[string]bool // mailboxes with an active session
-	closed   bool
-	sessions sync.WaitGroup
+	mu        sync.Mutex
+	listeners map[net.Listener]struct{}
+	conns     map[net.Conn]struct{}
+	locked    map[string]bool // mailboxes with an active session
+	closed    bool
+	sessions  sync.WaitGroup
 }
 
 // New builds a server; call Serve to accept connections.
@@ -70,22 +74,24 @@ func New(st *store.Store, opts Options) *Server {
 		opts.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
 	return &Server{
-		store:  st,
-		opts:   opts,
-		log:    opts.Logger,
-		conns:  map[net.Conn]struct{}{},
-		locked: map[string]bool{},
+		store:     st,
+		opts:      opts,
+		log:       opts.Logger,
+		listeners: map[net.Listener]struct{}{},
+		conns:     map[net.Conn]struct{}{},
+		locked:    map[string]bool{},
 	}
 }
 
-// Serve accepts connections on ln until Shutdown is called.
+// Serve accepts connections on ln until Shutdown is called. It may be
+// called for several listeners, e.g. a plain one and a TLS one.
 func (s *Server) Serve(ln net.Listener) error {
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
 		return nil
 	}
-	s.ln = ln
+	s.listeners[ln] = struct{}{}
 	s.mu.Unlock()
 
 	for {
@@ -123,8 +129,10 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	s.mu.Lock()
 	s.closed = true
 	var err error
-	if s.ln != nil {
-		err = s.ln.Close()
+	for ln := range s.listeners {
+		if cerr := ln.Close(); cerr != nil && err == nil {
+			err = cerr
+		}
 	}
 	for c := range s.conns {
 		c.Close()
@@ -198,17 +206,20 @@ type session struct {
 	banner string // APOP timestamp, including angle brackets
 
 	state    state
+	tls      bool   // encrypted (POP3S, or after STLS)
 	user     string // from USER, awaiting PASS
 	mailbox  string // locked maildrop once authenticated
 	messages []message
 }
 
 func newSession(s *Server, conn net.Conn) *session {
+	_, isTLS := conn.(*tls.Conn)
 	return &session{
 		s:      s,
 		conn:   conn,
 		r:      bufio.NewReaderSize(conn, 4096),
 		w:      bufio.NewWriterSize(conn, 32*1024),
+		tls:    isTLS,
 		banner: fmt.Sprintf("<%d.%d@%s>", os.Getpid(), time.Now().UnixNano(), s.opts.Hostname),
 	}
 }
@@ -277,6 +288,8 @@ func (ss *session) handle(cmd, arg string) bool {
 	case "QUIT":
 		ss.quit()
 		return true
+	case "STLS":
+		return !ss.startTLS()
 	case "NOOP":
 		if ss.state != stateTransaction {
 			ss.err("command not valid before login")
@@ -335,10 +348,58 @@ func (ss *session) handle(cmd, arg string) bool {
 
 func (ss *session) capa() {
 	ss.ok("Capability list follows")
-	for _, c := range []string{"USER", "TOP", "UIDL", "RESP-CODES", "AUTH-RESP-CODE", "PIPELINING", "EXPIRE NEVER", "IMPLEMENTATION Envry"} {
+	caps := []string{"USER", "TOP", "UIDL", "RESP-CODES", "AUTH-RESP-CODE", "PIPELINING", "EXPIRE NEVER", "IMPLEMENTATION Envry"}
+	if ss.canStartTLS() {
+		caps = append(caps, "STLS")
+	}
+	for _, c := range caps {
 		fmt.Fprintf(ss.w, "%s\r\n", c)
 	}
 	ss.w.WriteString(".\r\n")
+}
+
+func (ss *session) canStartTLS() bool {
+	return ss.s.opts.TLSConfig != nil && !ss.tls && ss.state == stateAuthorization
+}
+
+// startTLS upgrades the connection (RFC 2595). It reports false when the
+// session must end.
+func (ss *session) startTLS() bool {
+	if !ss.canStartTLS() {
+		switch {
+		case ss.tls:
+			ss.err("connection is already encrypted")
+		case ss.state != stateAuthorization:
+			ss.err("STLS is only valid before login")
+		default:
+			ss.err("TLS is not enabled on this server")
+		}
+		return true
+	}
+	// Anything the client sent after STLS arrived before the handshake.
+	// Processing it would let an attacker inject commands into the
+	// encrypted session, so drop the connection instead.
+	if ss.r.Buffered() > 0 {
+		ss.err("unexpected data after STLS")
+		return false
+	}
+	ss.ok("Begin TLS negotiation")
+	if err := ss.w.Flush(); err != nil {
+		return false
+	}
+	conn := tls.Server(ss.conn, ss.s.opts.TLSConfig)
+	conn.SetDeadline(time.Now().Add(30 * time.Second))
+	if err := conn.Handshake(); err != nil {
+		ss.s.log.Debug("pop3 tls handshake failed", "err", err)
+		return false
+	}
+	conn.SetDeadline(time.Time{})
+	ss.conn = conn
+	ss.r = bufio.NewReaderSize(conn, 4096)
+	ss.w = bufio.NewWriterSize(conn, 32*1024)
+	ss.tls = true
+	ss.user = "" // forget anything sent before encryption
+	return true
 }
 
 func (ss *session) cmdUser(arg string) {

@@ -6,11 +6,14 @@ package app
 import (
 	"context"
 	"crypto/subtle"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
+	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -22,6 +25,7 @@ import (
 	"github.com/arifurrahmanns/envry/internal/pop3d"
 	"github.com/arifurrahmanns/envry/internal/smtpd"
 	"github.com/arifurrahmanns/envry/internal/store"
+	"github.com/arifurrahmanns/envry/internal/tlsutil"
 	"github.com/arifurrahmanns/envry/internal/webui"
 )
 
@@ -36,23 +40,30 @@ type App struct {
 	smtp  *smtpd.Server
 	pop3  *pop3d.Server
 	imap  *imapd.Server
+	tls   *tlsutil.Result // nil unless --tls
 
 	httpServer *http.Server
-	httpLn     net.Listener
-	smtpLn     net.Listener
-	pop3Ln     net.Listener
-	imapLn     net.Listener
+	endpoints  []*endpoint
 }
 
-// Addrs are the actual bound addresses (useful when a port was 0).
+// endpoint is one listening socket and the server behind it.
+type endpoint struct {
+	name  string
+	addr  string
+	tls   bool // wrap the listener in implicit TLS
+	serve func(net.Listener) error
+	ln    net.Listener
+}
+
+// Addrs are the actual bound addresses (useful when a port was 0). The
+// TLS ones are empty unless TLS is enabled.
 type Addrs struct {
-	HTTP string
-	SMTP string
-	POP3 string
-	IMAP string
+	HTTP, SMTP, POP3, IMAP string
+	SMTPS, POP3S, IMAPS    string
 }
 
-// New opens the store and builds the servers. It does not open sockets.
+// New opens the store, loads TLS material and builds the servers. It does
+// not open sockets.
 func New(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, error) {
 	st, err := store.Open(ctx, store.Options{
 		Path:        cfg.DBPath,
@@ -69,36 +80,85 @@ func New(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, error
 		}
 	}
 
-	a := &App{
-		cfg:   cfg,
-		log:   log,
-		store: st,
-		api:   api.New(cfg, st, log),
-		smtp: smtpd.New(st, smtpd.Options{
-			MaxMessageBytes: cfg.MaxSize,
-			StrictAuth:      cfg.StrictAuth,
-			Logger:          log,
-		}),
-		pop3: pop3d.New(st, pop3d.Options{
-			StrictAuth: cfg.StrictAuth,
-			Logger:     log,
-		}),
-		imap: imapd.New(st, imapd.Options{
-			StrictAuth:      cfg.StrictAuth,
-			MaxMessageBytes: cfg.MaxSize,
-			Logger:          log,
-		}),
+	a := &App{cfg: cfg, log: log, store: st, api: api.New(cfg, st, log)}
+
+	var tlsConfig *tls.Config
+	if cfg.TLS {
+		a.tls, err = tlsutil.Load(tlsutil.Options{CertFile: cfg.TLSCert, KeyFile: cfg.TLSKey, Dir: tlsDir(cfg.DBPath)})
+		if err != nil {
+			st.Close()
+			return nil, err
+		}
+		tlsConfig = a.tls.Config
+		where := a.tls.Path
+		if where == "" {
+			where = "memory"
+		}
+		log.Info("tls enabled", "certificate", where, "self_signed", a.tls.SelfSigned, "generated", a.tls.Generated,
+			"expires", a.tls.NotAfter.Format(time.DateOnly), "sha256", a.tls.Fingerprint)
+		a.api.SetTLS(api.TLSInfo{SelfSigned: a.tls.SelfSigned, Fingerprint: a.tls.Fingerprint, Expires: a.tls.NotAfter})
 	}
+
+	a.smtp = smtpd.New(st, smtpd.Options{
+		MaxMessageBytes: cfg.MaxSize,
+		StrictAuth:      cfg.StrictAuth,
+		TLSConfig:       tlsConfig,
+		Logger:          log,
+	})
+	a.pop3 = pop3d.New(st, pop3d.Options{
+		StrictAuth: cfg.StrictAuth,
+		TLSConfig:  tlsConfig,
+		Logger:     log,
+	})
+	a.imap = imapd.New(st, imapd.Options{
+		StrictAuth:      cfg.StrictAuth,
+		MaxMessageBytes: cfg.MaxSize,
+		TLSConfig:       tlsConfig,
+		Logger:          log,
+	})
 	a.httpServer = &http.Server{
 		Handler:           a.routes(),
 		ReadHeaderTimeout: 10 * time.Second,
 		ErrorLog:          slog.NewLogLogger(log.Handler(), slog.LevelWarn),
 	}
+
+	serveHTTP := func(ln net.Listener) error {
+		if err := a.httpServer.Serve(ln); !errors.Is(err, http.ErrServerClosed) {
+			return err
+		}
+		return nil
+	}
+	a.endpoints = []*endpoint{
+		{name: "smtp", addr: cfg.SMTPAddr, serve: a.smtp.Serve},
+		{name: "pop3", addr: cfg.POP3Addr, serve: a.pop3.Serve},
+		{name: "imap", addr: cfg.IMAPAddr, serve: a.imap.Serve},
+	}
+	if cfg.TLS {
+		a.endpoints = append(a.endpoints,
+			&endpoint{name: "smtps", addr: cfg.SMTPSAddr, tls: true, serve: a.smtp.Serve},
+			&endpoint{name: "pop3s", addr: cfg.POP3SAddr, tls: true, serve: a.pop3.Serve},
+			&endpoint{name: "imaps", addr: cfg.IMAPSAddr, tls: true, serve: a.imap.Serve},
+		)
+	}
+	a.endpoints = append(a.endpoints, &endpoint{name: "http", addr: cfg.HTTPAddr, serve: serveHTTP})
 	return a, nil
+}
+
+// tlsDir keeps a generated certificate next to the database so mail
+// clients only have to trust it once. An in-memory database gets an
+// in-memory certificate.
+func tlsDir(dbPath string) string {
+	if dbPath == ":memory:" {
+		return ""
+	}
+	return filepath.Join(filepath.Dir(dbPath), "tls")
 }
 
 // Store exposes the store, mainly for tests.
 func (a *App) Store() *store.Store { return a.store }
+
+// TLS returns the loaded certificate, or nil when TLS is off.
+func (a *App) TLS() *tlsutil.Result { return a.tls }
 
 func (a *App) routes() http.Handler {
 	r := chi.NewRouter()
@@ -120,48 +180,51 @@ func (a *App) routes() http.Handler {
 
 // Listen binds every listener. Call it before Serve, or use Run.
 func (a *App) Listen() error {
-	var bound []net.Listener
-	listen := func(name, addr string) (net.Listener, error) {
-		ln, err := net.Listen("tcp", addr)
+	for i, e := range a.endpoints {
+		ln, err := net.Listen("tcp", e.addr)
 		if err != nil {
-			for _, l := range bound {
-				l.Close()
+			for _, prev := range a.endpoints[:i] {
+				prev.ln.Close()
+				prev.ln = nil
 			}
-			return nil, fmt.Errorf("listen %s %s: %w", name, addr, err)
+			return fmt.Errorf("listen %s %s: %w", e.name, e.addr, err)
 		}
-		bound = append(bound, ln)
-		return ln, nil
+		if e.tls {
+			ln = tls.NewListener(ln, a.tls.Config)
+		}
+		e.ln = ln
 	}
-	var err error
-	if a.smtpLn, err = listen("smtp", a.cfg.SMTPAddr); err != nil {
-		return err
-	}
-	if a.pop3Ln, err = listen("pop3", a.cfg.POP3Addr); err != nil {
-		return err
-	}
-	if a.imapLn, err = listen("imap", a.cfg.IMAPAddr); err != nil {
-		return err
-	}
-	if a.httpLn, err = listen("http", a.cfg.HTTPAddr); err != nil {
-		return err
-	}
+	a.api.SetPorts(a.boundPorts())
 	return nil
+}
+
+func (a *App) boundPorts() api.Ports {
+	addrs := a.Addrs()
+	p := func(addr string) int {
+		if addr == "" {
+			return 0
+		}
+		_, port, _ := net.SplitHostPort(addr)
+		n, _ := strconv.Atoi(port)
+		return n
+	}
+	return api.Ports{
+		SMTP: p(addrs.SMTP), POP3: p(addrs.POP3), IMAP: p(addrs.IMAP), HTTP: p(addrs.HTTP),
+		SMTPS: p(addrs.SMTPS), POP3S: p(addrs.POP3S), IMAPS: p(addrs.IMAPS),
+	}
 }
 
 // Addrs returns the bound addresses. Valid after Listen.
 func (a *App) Addrs() Addrs {
 	var out Addrs
-	if a.httpLn != nil {
-		out.HTTP = a.httpLn.Addr().String()
+	fields := map[string]*string{
+		"http": &out.HTTP, "smtp": &out.SMTP, "pop3": &out.POP3, "imap": &out.IMAP,
+		"smtps": &out.SMTPS, "pop3s": &out.POP3S, "imaps": &out.IMAPS,
 	}
-	if a.smtpLn != nil {
-		out.SMTP = a.smtpLn.Addr().String()
-	}
-	if a.pop3Ln != nil {
-		out.POP3 = a.pop3Ln.Addr().String()
-	}
-	if a.imapLn != nil {
-		out.IMAP = a.imapLn.Addr().String()
+	for _, e := range a.endpoints {
+		if e.ln != nil {
+			*fields[e.name] = e.ln.Addr().String()
+		}
 	}
 	return out
 }
@@ -169,35 +232,24 @@ func (a *App) Addrs() Addrs {
 // Serve runs until ctx is cancelled or a server fails, then shuts everything
 // down gracefully and closes the store.
 func (a *App) Serve(ctx context.Context) error {
-	if a.httpLn == nil || a.smtpLn == nil || a.pop3Ln == nil || a.imapLn == nil {
-		return errors.New("app: Serve called before Listen")
+	for _, e := range a.endpoints {
+		if e.ln == nil {
+			return errors.New("app: Serve called before Listen")
+		}
 	}
-	a.log.Info("smtp listening", "addr", a.smtpLn.Addr().String())
-	a.log.Info("pop3 listening", "addr", a.pop3Ln.Addr().String())
-	a.log.Info("imap listening", "addr", a.imapLn.Addr().String())
-	a.log.Info("http listening", "addr", a.httpLn.Addr().String(), "ui", "http://"+displayAddr(a.httpLn.Addr()))
-
-	errc := make(chan error, 4)
-	go func() {
-		if err := a.httpServer.Serve(a.httpLn); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			errc <- fmt.Errorf("http server: %w", err)
+	errc := make(chan error, len(a.endpoints))
+	for _, e := range a.endpoints {
+		if e.name == "http" {
+			a.log.Info("http listening", "addr", e.ln.Addr().String(), "ui", "http://"+displayAddr(e.ln.Addr()))
+		} else {
+			a.log.Info(e.name+" listening", "addr", e.ln.Addr().String())
 		}
-	}()
-	go func() {
-		if err := a.smtp.Serve(a.smtpLn); err != nil {
-			errc <- fmt.Errorf("smtp server: %w", err)
-		}
-	}()
-	go func() {
-		if err := a.pop3.Serve(a.pop3Ln); err != nil {
-			errc <- fmt.Errorf("pop3 server: %w", err)
-		}
-	}()
-	go func() {
-		if err := a.imap.Serve(a.imapLn); err != nil {
-			errc <- fmt.Errorf("imap server: %w", err)
-		}
-	}()
+		go func() {
+			if err := e.serve(e.ln); err != nil {
+				errc <- fmt.Errorf("%s server: %w", e.name, err)
+			}
+		}()
+	}
 
 	var runErr error
 	select {
@@ -209,17 +261,18 @@ func (a *App) Serve(ctx context.Context) error {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
 	a.api.Close()
-	if err := a.httpServer.Shutdown(shutdownCtx); err != nil {
-		runErr = errors.Join(runErr, fmt.Errorf("http shutdown: %w", err))
-	}
-	if err := a.smtp.Shutdown(shutdownCtx); err != nil {
-		runErr = errors.Join(runErr, fmt.Errorf("smtp shutdown: %w", err))
-	}
-	if err := a.pop3.Shutdown(shutdownCtx); err != nil {
-		runErr = errors.Join(runErr, fmt.Errorf("pop3 shutdown: %w", err))
-	}
-	if err := a.imap.Shutdown(shutdownCtx); err != nil {
-		runErr = errors.Join(runErr, fmt.Errorf("imap shutdown: %w", err))
+	for _, s := range []struct {
+		name     string
+		shutdown func(context.Context) error
+	}{
+		{"http", a.httpServer.Shutdown},
+		{"smtp", a.smtp.Shutdown},
+		{"pop3", a.pop3.Shutdown},
+		{"imap", a.imap.Shutdown},
+	} {
+		if err := s.shutdown(shutdownCtx); err != nil {
+			runErr = errors.Join(runErr, fmt.Errorf("%s shutdown: %w", s.name, err))
+		}
 	}
 	if err := a.store.Close(); err != nil {
 		runErr = errors.Join(runErr, fmt.Errorf("close store: %w", err))

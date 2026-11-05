@@ -1,13 +1,16 @@
 package app
 
 import (
+	"bufio"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/smtp"
 	"net/textproto"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -19,6 +22,11 @@ import (
 )
 
 func start(t *testing.T, cfg *config.Config) Addrs {
+	t.Helper()
+	return startApp(t, cfg).Addrs()
+}
+
+func startApp(t *testing.T, cfg *config.Config) *App {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	a, err := New(ctx, cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
@@ -41,7 +49,7 @@ func start(t *testing.T, cfg *config.Config) Addrs {
 			t.Error("Serve did not return after cancel")
 		}
 	})
-	return a.Addrs()
+	return a
 }
 
 func testConfig() *config.Config {
@@ -221,5 +229,97 @@ func TestStartupFailsOnBusyPort(t *testing.T) {
 	}
 	if err := a.Run(context.Background()); err == nil || !strings.Contains(err.Error(), "listen smtp") {
 		t.Errorf("Run on busy port: %v", err)
+	}
+}
+
+func TestTLSEndToEnd(t *testing.T) {
+	cfg := testConfig()
+	cfg.TLS = true
+	cfg.SMTPSAddr, cfg.POP3SAddr, cfg.IMAPSAddr = "127.0.0.1:0", "127.0.0.1:0", "127.0.0.1:0"
+	a := startApp(t, cfg)
+	addrs := a.Addrs()
+	clientTLS := &tls.Config{RootCAs: a.TLS().CertPool(), ServerName: "localhost"}
+
+	// Send over SMTPS (implicit TLS).
+	conn, err := tls.Dial("tcp", addrs.SMTPS, clientTLS)
+	if err != nil {
+		t.Fatalf("SMTPS dial: %v", err)
+	}
+	c, err := smtp.NewClient(conn, "localhost")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Mail("app@example.test"); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Rcpt("dev@test.local"); err != nil {
+		t.Fatal(err)
+	}
+	w, _ := c.Data()
+	w.Write([]byte("Subject: Encrypted end to end\r\n\r\nhello\r\n"))
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	c.Quit()
+
+	// Read it over IMAPS.
+	ic, err := imapclient.DialTLS(addrs.IMAPS, &imapclient.Options{TLSConfig: clientTLS})
+	if err != nil {
+		t.Fatalf("IMAPS dial: %v", err)
+	}
+	defer ic.Close()
+	if err := ic.Login("dev@test.local", "x").Wait(); err != nil {
+		t.Fatal(err)
+	}
+	if data, err := ic.Select("INBOX", nil).Wait(); err != nil || data.NumMessages != 1 {
+		t.Fatalf("IMAPS SELECT = %+v, %v", data, err)
+	}
+
+	// POP3S greets over TLS.
+	pc, err := tls.Dial("tcp", addrs.POP3S, clientTLS)
+	if err != nil {
+		t.Fatalf("POP3S dial: %v", err)
+	}
+	defer pc.Close()
+	if line, _ := bufio.NewReader(pc).ReadString('\n'); !strings.HasPrefix(line, "+OK") {
+		t.Errorf("POP3S greeting = %q", line)
+	}
+
+	_, body := get(t, "http://"+addrs.HTTP+"/api/v1/info", nil)
+	var info struct {
+		Ports struct{ SMTPS, IMAPS, POP3S int }
+		TLS   struct {
+			Enabled     bool
+			SelfSigned  bool
+			Fingerprint string
+		}
+	}
+	if err := json.Unmarshal([]byte(body), &info); err != nil {
+		t.Fatal(err)
+	}
+	if !info.TLS.Enabled || !info.TLS.SelfSigned || info.TLS.Fingerprint != a.TLS().Fingerprint ||
+		info.Ports.SMTPS == 0 || info.Ports.IMAPS == 0 || info.Ports.POP3S == 0 {
+		t.Errorf("info = %s", body)
+	}
+}
+
+func TestTLSOffByDefault(t *testing.T) {
+	a := startApp(t, testConfig())
+	if a.TLS() != nil || a.Addrs().SMTPS != "" {
+		t.Errorf("TLS listeners open without --tls: %+v", a.Addrs())
+	}
+	_, body := get(t, "http://"+a.Addrs().HTTP+"/api/v1/info", nil)
+	if !strings.Contains(body, `"tls":{"enabled":false}`) || !strings.Contains(body, `"smtps":0`) {
+		t.Errorf("info = %s", body)
+	}
+}
+
+func TestTLSDir(t *testing.T) {
+	if got := tlsDir(":memory:"); got != "" {
+		t.Errorf("tlsDir(:memory:) = %q", got)
+	}
+	db := filepath.Join("home", ".envry", "envry.db")
+	if got, want := tlsDir(db), filepath.Join("home", ".envry", "tls"); got != want {
+		t.Errorf("tlsDir = %q, want %q", got, want)
 	}
 }

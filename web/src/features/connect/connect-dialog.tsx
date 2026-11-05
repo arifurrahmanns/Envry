@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Check, Copy } from 'lucide-react'
+import { Check, Copy, Lock } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -10,13 +10,21 @@ import { cn } from '@/lib/utils'
 export function ConnectDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const { data } = useInfo()
   const host = window.location.hostname || 'localhost'
-  const ports = data?.ports ?? { smtp: 1025, pop3: 1110, imap: 1143, http: 8025 }
+  const ports = data?.ports ?? { smtp: 1025, pop3: 1110, imap: 1143, http: 8025, smtps: 0, pop3s: 0, imaps: 0 }
+  const tls = data?.tls
   const [lang, setLang] = useState<keyof typeof snippets>('node')
 
   const servers = [
-    { label: 'SMTP', port: ports.smtp, use: 'Send mail from your app' },
-    { label: 'IMAP', port: ports.imap, use: 'Read mail in a client' },
-    { label: 'POP3', port: ports.pop3, use: 'Download-and-delete clients' },
+    { label: 'SMTP', port: ports.smtp, use: tls?.enabled ? 'Send mail · STARTTLS available' : 'Send mail from your app' },
+    { label: 'IMAP', port: ports.imap, use: tls?.enabled ? 'Read mail · STARTTLS available' : 'Read mail in a client' },
+    { label: 'POP3', port: ports.pop3, use: tls?.enabled ? 'Download mail · STLS available' : 'Download-and-delete clients' },
+    ...(tls?.enabled
+      ? [
+          { label: 'SMTPS', port: ports.smtps, use: 'SMTP over implicit TLS' },
+          { label: 'IMAPS', port: ports.imaps, use: 'IMAP over implicit TLS' },
+          { label: 'POP3S', port: ports.pop3s, use: 'POP3 over implicit TLS' },
+        ]
+      : []),
   ]
 
   return (
@@ -27,14 +35,17 @@ export function ConnectDialog({ open, onOpenChange }: { open: boolean; onOpenCha
           <DialogDescription>
             SMTP accepts any username and password. For POP3 and IMAP, log in with a mailbox address
             such as <span className="font-mono text-foreground/80">dev@test.local</span>; any password
-            works unless strict auth is on. No TLS is needed for local testing.
+            works unless strict auth is on.{' '}
+            {tls?.enabled
+              ? 'TLS is on: use STARTTLS on the standard ports or the implicit-TLS ports below.'
+              : 'No TLS is needed for local testing; start Envry with --tls to enable it.'}
           </DialogDescription>
         </DialogHeader>
 
         <div className="overflow-hidden rounded-xl border">
           {servers.map((s, i) => (
             <div key={s.label} className={cn('flex items-center gap-3 px-4 py-3', i > 0 && 'border-t')}>
-              <span className="w-12 shrink-0 rounded-md border bg-muted px-1.5 py-0.5 text-center font-mono text-xs font-medium">
+              <span className="w-14 shrink-0 rounded-md border bg-muted px-1.5 py-0.5 text-center font-mono text-xs font-medium">
                 {s.label}
               </span>
               <code className="font-mono text-sm tabular-nums">
@@ -45,6 +56,21 @@ export function ConnectDialog({ open, onOpenChange }: { open: boolean; onOpenCha
             </div>
           ))}
         </div>
+
+        {tls?.enabled && tls.fingerprint && (
+          <div className="flex items-start gap-3 rounded-xl border px-4 py-3">
+            <Lock className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+            <div className="min-w-0 flex-1 space-y-1">
+              <p className="text-sm">
+                {tls.selfSigned
+                  ? 'Self-signed certificate. Accept it once when your mail client asks; Envry keeps the same one across restarts.'
+                  : 'Certificate loaded from --tls-cert.'}
+              </p>
+              <p className="font-mono text-xs break-all text-muted-foreground">SHA-256 {tls.fingerprint}</p>
+            </div>
+            <CopyButton value={tls.fingerprint} />
+          </div>
+        )}
 
         <div className="space-y-3">
           <div role="tablist" aria-label="Framework" className="flex flex-wrap gap-1">

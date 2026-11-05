@@ -91,7 +91,9 @@ export type Page<T> = {
 export type Info = {
   version: string
   commit: string
-  ports: { smtp: number; pop3: number; imap: number; http: number }
+  /** Implicit-TLS ports are 0 when TLS is off. */
+  ports: { smtp: number; pop3: number; imap: number; http: number; smtps: number; pop3s: number; imaps: number }
+  tls: { enabled: boolean; selfSigned?: boolean; fingerprint?: string; expires?: string }
   settings: { maxMessages: number; maxSize: number; strictAuth: boolean }
   stats: { messages: number; mailboxes: number; accounts: number }
 }

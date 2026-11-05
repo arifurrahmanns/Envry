@@ -2,7 +2,7 @@
 
 Envry is a local email testing server. It captures every email your application sends over SMTP, gives each recipient a mailbox, and serves those mailboxes back over POP3, IMAP, a REST API and a web UI. Nothing is ever relayed to the internet.
 
-> **Status:** early development. SMTP capture, POP3, IMAP, the web UI and the REST API work today; TLS is next.
+> **Status:** early development. SMTP capture, POP3, IMAP (all with optional TLS), the web UI and the REST API work today.
 
 ## Features
 
@@ -39,6 +39,19 @@ Connect any mail client (Thunderbird, Apple Mail, Outlook) or library to the IMA
 - When an application authenticates over SMTP as an account, a copy of what it sends is filed in that account's `Sent` folder.
 - Supported: IMAP4rev1 with `IDLE`, `MOVE`, `UIDPLUS`, `NAMESPACE`, `SPECIAL-USE`, `CHILDREN`, `LIST-EXTENDED`, `LIST-STATUS`, `STATUS=SIZE`, `ESEARCH`, `SEARCHRES`, `UNSELECT` and `APPENDLIMIT`.
 - `SEARCH` matches substrings case-insensitively in decoded headers and text parts, so partial words work.
+
+## TLS
+
+Plain connections are the default, because that is what most local test setups want. Start Envry with `--tls` to also test encrypted connections:
+
+```bash
+envry --tls
+```
+
+- **STARTTLS** is offered on the standard SMTP, IMAP and POP3 (`STLS`) ports.
+- **Implicit TLS** is served on SMTPS `1465`, IMAPS `1993` and POP3S `1995` (`--smtps`, `--imaps`, `--pop3s` change them).
+- Without `--tls-cert` and `--tls-key`, Envry generates a self-signed certificate for `localhost`, `127.0.0.1` and `::1` and keeps it in a `tls` folder next to the database, so a mail client only has to accept it once. It is renewed automatically before it expires. The SHA-256 fingerprint is logged at startup and shown in the web UI's connection settings.
+- Authentication still works without TLS, so the same accounts can be used either way.
 
 ## Reading mail over POP3
 
@@ -107,6 +120,7 @@ Every flag has a matching environment variable. Flags take precedence over envir
 | `--strict-auth` | `ENVRY_STRICT_AUTH` | `false` |
 | `--account` (repeatable) | `ENVRY_ACCOUNTS` (comma-separated) | none, e.g. `dev@test.local:secret` |
 | `--tls` | `ENVRY_TLS` | `false` |
+| `--smtps` / `--imaps` / `--pop3s` | `ENVRY_SMTPS` / `ENVRY_IMAPS` / `ENVRY_POP3S` | `0.0.0.0:1465` / `0.0.0.0:1993` / `0.0.0.0:1995` (with `--tls`) |
 | `--tls-cert` / `--tls-key` | `ENVRY_TLS_CERT` / `ENVRY_TLS_KEY` | self-signed when empty |
 | `--ui-auth` | `ENVRY_UI_AUTH` | none, e.g. `admin:password` |
 | `--log-level` | `ENVRY_LOG_LEVEL` | `info` |
@@ -138,6 +152,7 @@ internal/
   mimeparse/        Raw message → addresses, bodies, attachments
   pop3d/            POP3 server (RFC 1939)
   smtpd/            SMTP capture server
+  tlsutil/          Certificates: user-supplied or generated self-signed
   store/            SQLite storage, migrations and queries
   version/          Build metadata
   webui/            Embedded web UI with SPA fallback

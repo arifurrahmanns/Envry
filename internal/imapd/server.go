@@ -8,6 +8,7 @@ package imapd
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
@@ -30,7 +31,10 @@ type Options struct {
 	StrictAuth bool
 	// MaxMessageBytes limits APPEND uploads (APPENDLIMIT).
 	MaxMessageBytes int64
-	Logger          *slog.Logger
+	// TLSConfig enables STARTTLS. Implicit TLS is served by passing a TLS
+	// listener to Serve.
+	TLSConfig *tls.Config
+	Logger    *slog.Logger
 }
 
 // Server is an IMAP server backed by the store.
@@ -74,15 +78,17 @@ func New(st *store.Store, opts Options) *Server {
 		NewSession: func(c *imapserver.Conn) (imapserver.Session, *imapserver.GreetingData, error) {
 			return &session{srv: s, conn: c}, nil, nil
 		},
-		Caps:   caps,
-		Logger: logAdapter{opts.Logger},
+		Caps:      caps,
+		Logger:    logAdapter{opts.Logger},
+		TLSConfig: opts.TLSConfig,
 		// Local test server without TLS: LOGIN over plain text is expected.
 		InsecureAuth: true,
 	})
 	return s
 }
 
-// Serve accepts connections on ln until Shutdown.
+// Serve accepts connections on ln until Shutdown. It may be called for
+// several listeners, e.g. a plain one and a TLS one.
 func (s *Server) Serve(ln net.Listener) error {
 	s.hubOnce.Do(s.startHub)
 	err := s.imap.Serve(ln)

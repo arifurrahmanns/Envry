@@ -112,7 +112,7 @@ func TestInfo(t *testing.T) {
 	e.ingest("Subject: hi\r\n\r\nbody", "dev@test.local")
 	var info infoDTO
 	e.json("GET", "/api/v1/info", nil, 200, &info)
-	want := portsDTO{SMTP: 2525, POP3: 1110, IMAP: 1143, HTTP: 8025}
+	want := Ports{SMTP: 2525, POP3: 1110, IMAP: 1143, HTTP: 8025}
 	if info.Ports != want || info.Version == "" || info.Stats.Messages != 1 || info.Settings.MaxMessages != 1000 {
 		t.Errorf("info = %+v", info)
 	}

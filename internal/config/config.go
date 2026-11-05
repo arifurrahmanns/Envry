@@ -22,6 +22,11 @@ type Config struct {
 	IMAPAddr string
 	HTTPAddr string
 
+	// Implicit-TLS listeners, used only when TLS is on.
+	SMTPSAddr string
+	POP3SAddr string
+	IMAPSAddr string
+
 	// DBPath is a filesystem path or ":memory:".
 	DBPath string
 
@@ -57,6 +62,7 @@ type BasicAuth struct {
 // Flags holds the raw flag values before env overlay and validation.
 type Flags struct {
 	smtp, pop3, imap, http string
+	smtps, pop3s, imaps    string
 	db                     string
 	maxMessages            int
 	maxSize                string
@@ -80,6 +86,9 @@ var specs = []flagSpec{
 	{name: "pop3", env: "ENVRY_POP3"},
 	{name: "imap", env: "ENVRY_IMAP"},
 	{name: "http", env: "ENVRY_HTTP"},
+	{name: "smtps", env: "ENVRY_SMTPS"},
+	{name: "pop3s", env: "ENVRY_POP3S"},
+	{name: "imaps", env: "ENVRY_IMAPS"},
 	{name: "db", env: "ENVRY_DB"},
 	{name: "max-messages", env: "ENVRY_MAX_MESSAGES"},
 	{name: "max-size", env: "ENVRY_MAX_SIZE"},
@@ -102,12 +111,15 @@ func Register(fs *pflag.FlagSet) *Flags {
 	fs.StringVar(&f.pop3, "pop3", "0.0.0.0:1110", "POP3 listen address (env ENVRY_POP3)")
 	fs.StringVar(&f.imap, "imap", "0.0.0.0:1143", "IMAP listen address (env ENVRY_IMAP)")
 	fs.StringVar(&f.http, "http", "0.0.0.0:8025", "HTTP (web UI + API) listen address (env ENVRY_HTTP)")
+	fs.StringVar(&f.smtps, "smtps", "0.0.0.0:1465", "SMTP over implicit TLS listen address, with --tls (env ENVRY_SMTPS)")
+	fs.StringVar(&f.pop3s, "pop3s", "0.0.0.0:1995", "POP3 over implicit TLS listen address, with --tls (env ENVRY_POP3S)")
+	fs.StringVar(&f.imaps, "imaps", "0.0.0.0:1993", "IMAP over implicit TLS listen address, with --tls (env ENVRY_IMAPS)")
 	fs.StringVar(&f.db, "db", DefaultDBPath, `SQLite database path, or ":memory:" (env ENVRY_DB)`)
 	fs.IntVar(&f.maxMessages, "max-messages", 1000, "keep only the newest N messages, 0 = unlimited (env ENVRY_MAX_MESSAGES)")
 	fs.StringVar(&f.maxSize, "max-size", "25MB", "maximum accepted message size, e.g. 512KB, 25MB (env ENVRY_MAX_SIZE)")
 	fs.BoolVar(&f.strictAuth, "strict-auth", false, "require per-account passwords on SMTP/POP3/IMAP (env ENVRY_STRICT_AUTH)")
 	fs.StringArrayVar(&f.accounts, "account", nil, "Inbox account as address[:password], repeatable (env ENVRY_ACCOUNTS, comma-separated)")
-	fs.BoolVar(&f.tls, "tls", false, "enable STARTTLS and implicit-TLS ports (env ENVRY_TLS)")
+	fs.BoolVar(&f.tls, "tls", false, "enable STARTTLS and the implicit-TLS ports (env ENVRY_TLS)")
 	fs.StringVar(&f.tlsCert, "tls-cert", "", "TLS certificate file; self-signed if empty (env ENVRY_TLS_CERT)")
 	fs.StringVar(&f.tlsKey, "tls-key", "", "TLS private key file; self-signed if empty (env ENVRY_TLS_KEY)")
 	fs.StringVar(&f.uiAuth, "ui-auth", "", "protect the web UI and API with basic auth, user:pass (env ENVRY_UI_AUTH)")
@@ -163,6 +175,9 @@ func (f *Flags) build() (*Config, error) {
 		{"pop3", f.pop3, &c.POP3Addr},
 		{"imap", f.imap, &c.IMAPAddr},
 		{"http", f.http, &c.HTTPAddr},
+		{"smtps", f.smtps, &c.SMTPSAddr},
+		{"pop3s", f.pop3s, &c.POP3SAddr},
+		{"imaps", f.imaps, &c.IMAPSAddr},
 	} {
 		if _, _, err := net.SplitHostPort(a.val); err != nil {
 			errs = append(errs, fmt.Errorf("--%s %q: want host:port: %w", a.name, a.val, err))

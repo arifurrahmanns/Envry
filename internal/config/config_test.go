@@ -31,6 +31,9 @@ func TestDefaults(t *testing.T) {
 		c.IMAPAddr != "0.0.0.0:1143" || c.HTTPAddr != "0.0.0.0:8025" {
 		t.Errorf("unexpected default addrs: %+v", c)
 	}
+	if c.SMTPSAddr != "0.0.0.0:1465" || c.POP3SAddr != "0.0.0.0:1995" || c.IMAPSAddr != "0.0.0.0:1993" {
+		t.Errorf("unexpected default TLS addrs: %+v", c)
+	}
 	if c.MaxMessages != 1000 {
 		t.Errorf("MaxMessages = %d", c.MaxMessages)
 	}
@@ -49,6 +52,8 @@ func TestDefaults(t *testing.T) {
 func TestEnvOverlaysDefaults(t *testing.T) {
 	c, err := load(t, nil, map[string]string{
 		"ENVRY_SMTP":         "127.0.0.1:2525",
+		"ENVRY_IMAPS":        "127.0.0.1:9993",
+		"ENVRY_TLS":          "1",
 		"ENVRY_DB":           ":memory:",
 		"ENVRY_MAX_MESSAGES": "5",
 		"ENVRY_MAX_SIZE":     "512KB",
@@ -59,6 +64,9 @@ func TestEnvOverlaysDefaults(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if c.IMAPSAddr != "127.0.0.1:9993" || !c.TLS {
+		t.Errorf("TLS env not applied: %+v", c)
 	}
 	if c.SMTPAddr != "127.0.0.1:2525" || c.DBPath != ":memory:" || c.MaxMessages != 5 ||
 		c.MaxSize != 512<<10 || !c.StrictAuth || c.LogLevel != slog.LevelDebug {
@@ -98,6 +106,7 @@ func TestFlagsWinOverEnv(t *testing.T) {
 func TestValidationErrors(t *testing.T) {
 	cases := map[string][]string{
 		"bad addr":     {"--http", "8025"},
+		"bad tls addr": {"--pop3s", "995"},
 		"bad size":     {"--max-size", "10XB"},
 		"bad account":  {"--account", "not-an-email"},
 		"half tls":     {"--tls-cert", "cert.pem"},

@@ -4,6 +4,7 @@ package smtpd
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
@@ -25,7 +26,10 @@ type Options struct {
 	MaxMessageBytes int64
 	// StrictAuth requires AUTH with an account's password before MAIL.
 	StrictAuth bool
-	Logger     *slog.Logger
+	// TLSConfig enables STARTTLS. Implicit TLS is served by passing a TLS
+	// listener to Serve.
+	TLSConfig *tls.Config
+	Logger    *slog.Logger
 }
 
 // Server wraps a go-smtp server backed by the store.
@@ -48,6 +52,7 @@ func New(st *store.Store, opts Options) *Server {
 
 	srv := smtp.NewServer(&backend{s})
 	srv.Domain = opts.Domain
+	srv.TLSConfig = opts.TLSConfig
 	srv.MaxMessageBytes = opts.MaxMessageBytes
 	srv.MaxRecipients = 1000
 	srv.AllowInsecureAuth = true // local test server: AUTH without TLS is expected
@@ -59,7 +64,8 @@ func New(st *store.Store, opts Options) *Server {
 	return s
 }
 
-// Serve accepts connections on ln until Shutdown.
+// Serve accepts connections on ln until Shutdown. It may be called for
+// several listeners, e.g. a plain one and a TLS one.
 func (s *Server) Serve(ln net.Listener) error {
 	err := s.smtp.Serve(ln)
 	if errors.Is(err, smtp.ErrServerClosed) {
