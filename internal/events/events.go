@@ -12,6 +12,7 @@ const (
 	MessageCreated  = "message.created"
 	MessageDeleted  = "message.deleted"
 	MessagesCleared = "messages.cleared"
+	DeliveryCreated = "delivery.created"
 	DeliveryUpdated = "delivery.updated"
 	DeliveryDeleted = "delivery.deleted"
 	MailboxCreated  = "mailbox.created"

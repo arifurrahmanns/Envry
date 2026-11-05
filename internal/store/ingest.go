@@ -32,19 +32,15 @@ type IngestInput struct {
 // mailbox (creating mailboxes as needed), publishes message.created and
 // applies the retention limit.
 func (s *Store) Ingest(ctx context.Context, in IngestInput) (*MessageSummary, error) {
-	parsed, err := mimeparse.Parse(in.Raw)
-	if err != nil {
-		s.log.Warn("storing message with unreadable headers", "err", err)
-		parsed = &mimeparse.Message{}
-	}
 	if in.Source == "" {
 		in.Source = SourceSMTP
 	}
-
-	now := s.now().UTC()
-	id := s.newID(now)
+	parsed, sum, err := s.prepare(in.Raw, in.Source)
+	if err != nil {
+		return nil, err
+	}
+	id, now := sum.ID, sum.ReceivedAt
 	rcpts := classifyRecipients(in.Recipients, parsed)
-	sum := summarize(id, parsed, int64(len(in.Raw)), in.Source, now)
 
 	var newMailboxes []string
 	err = s.inTx(ctx, func(tx *sql.Tx) error {
@@ -94,6 +90,17 @@ func (s *Store) Ingest(ctx context.Context, in IngestInput) (*MessageSummary, er
 	s.publish(events.MessageCreated, sum)
 	s.prune(ctx)
 	return &sum, nil
+}
+
+// prepare parses a raw message and builds its summary with a new ID.
+func (s *Store) prepare(raw []byte, source string) (*mimeparse.Message, MessageSummary, error) {
+	parsed, err := mimeparse.Parse(raw)
+	if err != nil {
+		s.log.Warn("storing message with unreadable headers", "err", err)
+		parsed = &mimeparse.Message{}
+	}
+	now := s.now().UTC()
+	return parsed, summarize(s.newID(now), parsed, int64(len(raw)), source, now), nil
 }
 
 func summarize(id string, p *mimeparse.Message, size int64, source string, now time.Time) MessageSummary {
@@ -181,9 +188,8 @@ func deliver(tx *sql.Tx, a deliverArgs) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	var folderID int64
-	if err := tx.QueryRow(`SELECT id FROM folders WHERE mailbox_id = ? AND name = ?`, mailboxID, a.folder).
-		Scan(&folderID); err != nil {
+	folderID, err := ensureFolder(tx, mailboxID, a.folder, a.now)
+	if err != nil {
 		return false, fmt.Errorf("find folder %s for %s: %w", a.folder, a.address, err)
 	}
 	var uid int64
@@ -198,6 +204,28 @@ func deliver(tx *sql.Tx, a deliverArgs) (bool, error) {
 		return false, fmt.Errorf("insert delivery: %w", err)
 	}
 	return created, nil
+}
+
+// ensureFolder returns a folder's ID, re-creating a default folder that an
+// IMAP client deleted (mail still has to land in INBOX and Sent).
+func ensureFolder(tx *sql.Tx, mailboxID int64, name string, now time.Time) (int64, error) {
+	var id int64
+	err := tx.QueryRow(`SELECT id FROM folders WHERE mailbox_id = ? AND name = ?`, mailboxID, name).Scan(&id)
+	if !errors.Is(err, sql.ErrNoRows) {
+		return id, err
+	}
+	special := ""
+	for _, f := range defaultFolders {
+		if f.name == name {
+			special = f.specialUse
+		}
+	}
+	res, err := tx.Exec(`INSERT INTO folders (mailbox_id, name, special_use, uid_validity) VALUES (?, ?, ?, ?)`,
+		mailboxID, name, toNull(special), now.Unix())
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
 }
 
 var defaultFolders = []struct{ name, specialUse string }{

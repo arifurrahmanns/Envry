@@ -12,6 +12,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/emersion/go-imap/v2"
+	"github.com/emersion/go-imap/v2/imapclient"
+
 	"github.com/arifurrahmanns/envry/internal/config"
 )
 
@@ -44,7 +47,7 @@ func start(t *testing.T, cfg *config.Config) Addrs {
 func testConfig() *config.Config {
 	return &config.Config{
 		SMTPAddr: "127.0.0.1:0", POP3Addr: "127.0.0.1:0",
-		IMAPAddr: "127.0.0.1:1143", HTTPAddr: "127.0.0.1:0",
+		IMAPAddr: "127.0.0.1:0", HTTPAddr: "127.0.0.1:0",
 		DBPath: ":memory:", MaxMessages: 1000, MaxSize: 1 << 20,
 	}
 }
@@ -145,6 +148,43 @@ func TestSMTPToPOP3(t *testing.T) {
 	_, out := get(t, "http://"+addrs.HTTP+"/api/v1/mailboxes/dev@test.local/messages", nil)
 	if !strings.Contains(out, `"total":0`) {
 		t.Errorf("mailbox after POP3 DELE+QUIT: %s", out)
+	}
+}
+
+func TestSMTPToIMAP(t *testing.T) {
+	addrs := start(t, testConfig())
+	c, err := imapclient.DialInsecure(addrs.IMAP, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	if err := c.Login("dev@test.local", "x").Wait(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Select("INBOX", nil).Wait(); err != nil {
+		t.Fatal(err)
+	}
+
+	msg := "From: app@example.test\r\nTo: dev@test.local\r\nSubject: Via IMAP\r\n\r\nHello IMAP\r\n"
+	if err := smtp.SendMail(addrs.SMTP, nil, "app@example.test", []string{"dev@test.local"}, []byte(msg)); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Noop().Wait(); err != nil {
+		t.Fatal(err)
+	}
+	if n := c.Mailbox().NumMessages; n != 1 {
+		t.Fatalf("INBOX has %d messages after SMTP delivery", n)
+	}
+	body := &imap.FetchItemBodySection{}
+	msgs, err := c.Fetch(imap.SeqSetNum(1), &imap.FetchOptions{BodySection: []*imap.FetchItemBodySection{body}}).Collect()
+	if err != nil || !strings.Contains(string(msgs[0].FindBodySection(body)), "Hello IMAP") {
+		t.Fatalf("FETCH = %v, %v", msgs, err)
+	}
+
+	// Reading it in the IMAP client shows as read in the web UI.
+	_, out := get(t, "http://"+addrs.HTTP+"/api/v1/mailboxes/dev@test.local/messages", nil)
+	if !strings.Contains(out, `"seen":true`) {
+		t.Errorf("web view after IMAP read: %s", out)
 	}
 }
 

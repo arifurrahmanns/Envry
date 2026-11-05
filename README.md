@@ -2,7 +2,7 @@
 
 Envry is a local email testing server. It captures every email your application sends over SMTP, gives each recipient a mailbox, and serves those mailboxes back over POP3, IMAP, a REST API and a web UI. Nothing is ever relayed to the internet.
 
-> **Status:** early development. SMTP capture, POP3, the web UI and the REST API work today; IMAP is being built.
+> **Status:** early development. SMTP capture, POP3, IMAP, the web UI and the REST API work today; TLS is next.
 
 ## Features
 
@@ -30,6 +30,15 @@ Then open <http://localhost:8025> and point your application at `localhost:1025`
 | POP3 | 1110 |
 | IMAP | 1143 |
 | Web UI and API | 8025 |
+
+## Reading mail over IMAP
+
+Connect any mail client (Thunderbird, Apple Mail, Outlook) or library to the IMAP port with a mailbox address as the username. Every mailbox has `INBOX`, `Sent`, `Drafts` and `Trash`; clients can create, rename and delete their own folders too.
+
+- Changes show up everywhere at once: mail captured over SMTP appears in an idling client within milliseconds, and reading, flagging or deleting a message in the client updates the web UI live (and the other way round).
+- When an application authenticates over SMTP as an account, a copy of what it sends is filed in that account's `Sent` folder.
+- Supported: IMAP4rev1 with `IDLE`, `MOVE`, `UIDPLUS`, `NAMESPACE`, `SPECIAL-USE`, `CHILDREN`, `LIST-EXTENDED`, `LIST-STATUS`, `STATUS=SIZE`, `ESEARCH`, `SEARCHRES`, `UNSELECT` and `APPENDLIMIT`.
+- `SEARCH` matches substrings case-insensitively in decoded headers and text parts, so partial words work.
 
 ## Reading mail over POP3
 
@@ -125,6 +134,7 @@ internal/
   app/              Wires the servers together and runs them
   config/           Flags and ENVRY_* environment variables
   events/           In-process publish/subscribe bus
+  imapd/            IMAP server (go-imap v2) kept in sync through the event bus
   mimeparse/        Raw message → addresses, bodies, attachments
   pop3d/            POP3 server (RFC 1939)
   smtpd/            SMTP capture server

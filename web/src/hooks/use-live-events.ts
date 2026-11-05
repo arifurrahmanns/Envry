@@ -9,6 +9,7 @@ type LiveEvent =
   | { type: 'message.created'; data: MessageSummary }
   | { type: 'message.deleted'; data: { id: string } }
   | { type: 'messages.cleared'; data: null }
+  | { type: 'delivery.created'; data: { deliveryId: number } }
   | { type: 'delivery.updated'; data: { deliveryId: number } }
   | { type: 'delivery.deleted'; data: { deliveryId: number } }
   | { type: 'mailbox.created'; data: { address: string } }
@@ -54,6 +55,7 @@ export function useLiveEvents(onOpenMessage: (id: string) => void): LiveStatus {
           qc.removeQueries({ queryKey: ['message'] })
           invalidateMail()
           break
+        case 'delivery.created':
         case 'delivery.updated':
         case 'delivery.deleted':
           void qc.invalidateQueries({ queryKey: ['mailbox-messages'] })

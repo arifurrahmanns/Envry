@@ -18,6 +18,7 @@ import (
 
 	"github.com/arifurrahmanns/envry/internal/api"
 	"github.com/arifurrahmanns/envry/internal/config"
+	"github.com/arifurrahmanns/envry/internal/imapd"
 	"github.com/arifurrahmanns/envry/internal/pop3d"
 	"github.com/arifurrahmanns/envry/internal/smtpd"
 	"github.com/arifurrahmanns/envry/internal/store"
@@ -34,11 +35,13 @@ type App struct {
 	api   *api.Server
 	smtp  *smtpd.Server
 	pop3  *pop3d.Server
+	imap  *imapd.Server
 
 	httpServer *http.Server
 	httpLn     net.Listener
 	smtpLn     net.Listener
 	pop3Ln     net.Listener
+	imapLn     net.Listener
 }
 
 // Addrs are the actual bound addresses (useful when a port was 0).
@@ -46,6 +49,7 @@ type Addrs struct {
 	HTTP string
 	SMTP string
 	POP3 string
+	IMAP string
 }
 
 // New opens the store and builds the servers. It does not open sockets.
@@ -78,6 +82,11 @@ func New(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, error
 		pop3: pop3d.New(st, pop3d.Options{
 			StrictAuth: cfg.StrictAuth,
 			Logger:     log,
+		}),
+		imap: imapd.New(st, imapd.Options{
+			StrictAuth:      cfg.StrictAuth,
+			MaxMessageBytes: cfg.MaxSize,
+			Logger:          log,
 		}),
 	}
 	a.httpServer = &http.Server{
@@ -130,6 +139,9 @@ func (a *App) Listen() error {
 	if a.pop3Ln, err = listen("pop3", a.cfg.POP3Addr); err != nil {
 		return err
 	}
+	if a.imapLn, err = listen("imap", a.cfg.IMAPAddr); err != nil {
+		return err
+	}
 	if a.httpLn, err = listen("http", a.cfg.HTTPAddr); err != nil {
 		return err
 	}
@@ -148,20 +160,24 @@ func (a *App) Addrs() Addrs {
 	if a.pop3Ln != nil {
 		out.POP3 = a.pop3Ln.Addr().String()
 	}
+	if a.imapLn != nil {
+		out.IMAP = a.imapLn.Addr().String()
+	}
 	return out
 }
 
 // Serve runs until ctx is cancelled or a server fails, then shuts everything
 // down gracefully and closes the store.
 func (a *App) Serve(ctx context.Context) error {
-	if a.httpLn == nil || a.smtpLn == nil || a.pop3Ln == nil {
+	if a.httpLn == nil || a.smtpLn == nil || a.pop3Ln == nil || a.imapLn == nil {
 		return errors.New("app: Serve called before Listen")
 	}
 	a.log.Info("smtp listening", "addr", a.smtpLn.Addr().String())
 	a.log.Info("pop3 listening", "addr", a.pop3Ln.Addr().String())
+	a.log.Info("imap listening", "addr", a.imapLn.Addr().String())
 	a.log.Info("http listening", "addr", a.httpLn.Addr().String(), "ui", "http://"+displayAddr(a.httpLn.Addr()))
 
-	errc := make(chan error, 3)
+	errc := make(chan error, 4)
 	go func() {
 		if err := a.httpServer.Serve(a.httpLn); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errc <- fmt.Errorf("http server: %w", err)
@@ -175,6 +191,11 @@ func (a *App) Serve(ctx context.Context) error {
 	go func() {
 		if err := a.pop3.Serve(a.pop3Ln); err != nil {
 			errc <- fmt.Errorf("pop3 server: %w", err)
+		}
+	}()
+	go func() {
+		if err := a.imap.Serve(a.imapLn); err != nil {
+			errc <- fmt.Errorf("imap server: %w", err)
 		}
 	}()
 
@@ -196,6 +217,9 @@ func (a *App) Serve(ctx context.Context) error {
 	}
 	if err := a.pop3.Shutdown(shutdownCtx); err != nil {
 		runErr = errors.Join(runErr, fmt.Errorf("pop3 shutdown: %w", err))
+	}
+	if err := a.imap.Shutdown(shutdownCtx); err != nil {
+		runErr = errors.Join(runErr, fmt.Errorf("imap shutdown: %w", err))
 	}
 	if err := a.store.Close(); err != nil {
 		runErr = errors.Join(runErr, fmt.Errorf("close store: %w", err))

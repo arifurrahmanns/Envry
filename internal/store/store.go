@@ -51,8 +51,9 @@ type Store struct {
 	maxMessages int
 	now         func() time.Time
 
-	idMu    sync.Mutex
-	entropy io.Reader
+	idMu            sync.Mutex
+	entropy         io.Reader
+	lastUIDValidity uint32
 }
 
 // Open opens (creating if needed) the database and applies migrations.
