@@ -313,8 +313,8 @@ function MessageBody({ message: m }: { message: MessageDetail }) {
               aria-selected={view === v.id}
               onClick={() => setView(v.id)}
               className={cn(
-                'h-8 rounded-[10px] px-3 text-[14px] text-foreground/75 transition-colors hover:text-foreground',
-                view === v.id && 'bg-muted font-medium text-foreground',
+                'h-8 rounded-[10px] px-3 text-[14px] text-foreground/75 transition-colors hover:bg-accent/60 hover:text-accent-foreground',
+                view === v.id && 'bg-accent font-medium text-accent-foreground',
               )}
             >
               {v.label}

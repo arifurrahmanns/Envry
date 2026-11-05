@@ -99,7 +99,10 @@ export function MessageList({
               <Button
                 variant="outline"
                 aria-label="Filter"
-                className={cn('h-9 gap-2 rounded-[10px] px-3 font-normal shadow-none', filtering && 'bg-muted')}
+                className={cn(
+                  'h-9 gap-2 rounded-[10px] px-3 font-normal shadow-none',
+                  filtering && 'border-primary/40 bg-accent text-accent-foreground',
+                )}
               >
                 <Funnel className="size-4" strokeWidth={1.75} />
                 <span className="hidden sm:inline">Filter</span>
@@ -211,8 +214,8 @@ function MessageRow({
       data-message-id={item.id}
       onClick={onSelect}
       className={cn(
-        'group relative flex cursor-pointer items-center gap-3.5 px-5 py-2.5 transition-colors hover:bg-accent md:px-7',
-        selected && 'bg-accent',
+        'group relative flex cursor-pointer items-center gap-3.5 px-5 py-2.5 transition-colors hover:bg-accent/55 md:px-7',
+        selected && 'bg-accent hover:bg-accent',
       )}
     >
       <SenderAvatar name={item.from.name} address={item.from.address} size="md" />
@@ -266,7 +269,7 @@ function RowAction({
   href?: string
 }) {
   const className =
-    'flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground'
+    'flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-primary/20 hover:text-primary'
   return (
     <Tooltip>
       <TooltipTrigger asChild>

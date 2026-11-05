@@ -4,8 +4,9 @@
 @custom-variant dark (&:is(.dark *));
 
 /*
- * Neutral, near-black surfaces in dark mode (the default) with white as the
- * primary action. Red (--brand) marks unread mail; green means live.
+ * Neutral, near-black surfaces in dark mode (the default) with orange as the
+ * accent: primary buttons, hover and selected states, focus rings, unread
+ * mail and badges. Green means live.
  */
 :root {
   --radius: 0.625rem;
@@ -16,19 +17,19 @@
   --card-foreground: oklch(0.2 0 0);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.2 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.646 0.222 41.1); /* orange-600 */
+  --primary-foreground: oklch(0.98 0.016 73.7);
   --secondary: oklch(0.96 0 0);
   --secondary-foreground: oklch(0.2 0 0);
   --muted: oklch(0.955 0 0);
   --muted-foreground: oklch(0.52 0 0);
-  --accent: oklch(0.965 0 0);
-  --accent-foreground: oklch(0.2 0 0);
+  --accent: oklch(0.954 0.038 75.2); /* orange tint for hover and selection */
+  --accent-foreground: oklch(0.47 0.157 37.3);
   --destructive: oklch(0.577 0.245 27.3);
   --border: oklch(0.915 0 0);
   --input: oklch(0.88 0 0);
-  --ring: oklch(0.708 0 0);
-  --brand: oklch(0.628 0.226 25.3);
+  --ring: oklch(0.705 0.213 47.6);
+  --brand: oklch(0.646 0.222 41.1); /* orange-600 */
   --brand-foreground: oklch(0.985 0 0);
   --success: oklch(0.6 0.15 155);
   --warning: oklch(0.7 0.16 75);
@@ -37,12 +38,12 @@
   --email-canvas: oklch(1 0 0);
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.2 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.955 0 0);
-  --sidebar-accent-foreground: oklch(0.2 0 0);
+  --sidebar-primary: oklch(0.646 0.222 41.1);
+  --sidebar-primary-foreground: oklch(0.98 0.016 73.7);
+  --sidebar-accent: oklch(0.954 0.038 75.2);
+  --sidebar-accent-foreground: oklch(0.47 0.157 37.3);
   --sidebar-border: oklch(0.915 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --sidebar-ring: oklch(0.705 0.213 47.6);
 
   /* Avatar fallbacks: soft tint background, deeper text of the same hue. */
   --avatar-1-bg: oklch(0.9 0.06 300);
@@ -67,32 +68,33 @@
   --card-foreground: oklch(0.97 0 0);
   --popover: oklch(0.19 0 0);
   --popover-foreground: oklch(0.97 0 0);
-  --primary: oklch(0.97 0 0);
+  --primary: oklch(0.705 0.213 47.6); /* orange-500 */
   --primary-foreground: oklch(0.16 0 0);
   --secondary: oklch(0.235 0 0);
   --secondary-foreground: oklch(0.97 0 0);
   --muted: oklch(0.245 0 0);
   --muted-foreground: oklch(0.66 0 0);
-  --accent: oklch(0.2 0 0);
-  --accent-foreground: oklch(0.97 0 0);
+  --accent: oklch(0.29 0.06 45); /* dark orange tint for hover and selection */
+  --accent-foreground: oklch(0.9 0.08 60);
   --destructive: oklch(0.65 0.21 25);
   --border: oklch(1 0 0 / 9%);
   --input: oklch(1 0 0 / 16%);
-  --ring: oklch(0.55 0 0);
-  --brand: oklch(0.637 0.237 25.3);
-  --brand-foreground: oklch(0.985 0 0);
+  --ring: oklch(0.705 0.213 47.6);
+  --brand: oklch(0.705 0.213 47.6); /* orange-500 */
+  /* Dark text keeps badge numbers readable on the brighter orange. */
+  --brand-foreground: oklch(0.18 0 0);
   --success: oklch(0.74 0.16 152);
   --warning: oklch(0.86 0.17 92);
   --info: oklch(0.66 0.17 255);
   --email-canvas: oklch(1 0 0);
   --sidebar: oklch(0.145 0 0);
   --sidebar-foreground: oklch(0.97 0 0);
-  --sidebar-primary: oklch(0.97 0 0);
+  --sidebar-primary: oklch(0.705 0.213 47.6);
   --sidebar-primary-foreground: oklch(0.16 0 0);
-  --sidebar-accent: oklch(0.205 0 0);
-  --sidebar-accent-foreground: oklch(0.97 0 0);
+  --sidebar-accent: oklch(0.29 0.06 45);
+  --sidebar-accent-foreground: oklch(0.9 0.08 60);
   --sidebar-border: oklch(1 0 0 / 9%);
-  --sidebar-ring: oklch(0.55 0 0);
+  --sidebar-ring: oklch(0.705 0.213 47.6);
 
   /* Bright pastel discs with dark initials, like photo avatars on black. */
   --avatar-1-bg: oklch(0.82 0.08 300);

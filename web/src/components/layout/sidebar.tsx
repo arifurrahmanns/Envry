@@ -16,7 +16,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { count } from '@/lib/format'
-import { useInfo, useMailboxes } from '@/lib/queries'
+import { useMailboxes } from '@/lib/queries'
 import { cn } from '@/lib/utils'
 
 type SidebarProps = {
@@ -49,18 +49,22 @@ export function SidebarContent({ collapsed = false, onToggle, onNavigate, marker
 
   return (
     <div className={cn('flex h-full min-h-0 flex-col pt-8 pb-5', collapsed ? 'items-center px-3' : 'px-5')}>
-      <div className={cn('mb-7 flex items-center', collapsed ? 'flex-col gap-4' : 'justify-between pl-1')}>
-        <Link to="/sent" onClick={onNavigate} className="rounded-md focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none">
-          <Logo />
-        </Link>
-        {onToggle && (
-          <IconAction
-            icon={collapsed ? PanelLeftOpen : PanelLeftClose}
-            label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            onClick={onToggle}
-          />
-        )}
-      </div>
+      {collapsed && onToggle ? (
+        <div className="mb-7">
+          <ExpandToggle onClick={onToggle} />
+        </div>
+      ) : (
+        <div className="mb-7 flex items-center justify-between pl-1">
+          <Link
+            to="/sent"
+            onClick={onNavigate}
+            className="rounded-md focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+          >
+            <Logo />
+          </Link>
+          {onToggle && <IconAction icon={PanelLeftClose} label="Collapse sidebar" onClick={onToggle} />}
+        </div>
+      )}
 
       {collapsed ? (
         <IconAction icon={Search} label="Search" onClick={onToggle} className="mb-4 size-10 rounded-xl border" />
@@ -145,8 +149,30 @@ function Divider() {
   return <div aria-hidden className="my-5 h-px w-full shrink-0 bg-border" />
 }
 
+/** In the collapsed sidebar the logo doubles as the expand button: it
+ *  shows the logo, and the expand icon on hover or keyboard focus. */
+function ExpandToggle({ onClick }: { onClick: () => void }) {
+  return (
+    <WithTooltip label="Expand sidebar">
+      <button
+        type="button"
+        onClick={onClick}
+        aria-label="Expand sidebar"
+        className="group relative flex size-10 items-center justify-center rounded-[10px] transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+      >
+        <Logo className="transition-opacity duration-150 group-hover:opacity-0 group-focus-visible:opacity-0" />
+        <PanelLeftOpen
+          aria-hidden
+          className="absolute size-5 text-foreground opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100"
+          strokeWidth={1.75}
+        />
+      </button>
+    </WithTooltip>
+  )
+}
+
 const itemBase =
-  'relative flex h-10 items-center gap-3 rounded-[10px] border border-transparent text-[14px] text-foreground/85 transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none'
+  'group/item relative flex h-10 items-center gap-3 rounded-[10px] border border-transparent text-[14px] text-foreground/85 transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none'
 
 function NavItem({
   to,
@@ -175,10 +201,16 @@ function NavItem({
       className={cn(
         itemBase,
         collapsed ? 'size-10 justify-center' : 'w-full px-3',
-        active && 'border-border bg-accent font-medium text-foreground shadow-xs',
+        active && 'border-primary/30 bg-accent font-medium text-accent-foreground shadow-xs',
       )}
     >
-      <Icon className="size-[18px] shrink-0 text-muted-foreground" strokeWidth={1.75} />
+      <Icon
+        className={cn(
+          'size-[18px] shrink-0 text-muted-foreground transition-colors group-hover/item:text-primary',
+          active && 'text-primary',
+        )}
+        strokeWidth={1.75}
+      />
       {!collapsed && <span className="truncate">{label}</span>}
       {badge > 0 &&
         (collapsed ? (
@@ -191,7 +223,7 @@ function NavItem({
       {active && marker && (
         <span
           aria-hidden
-          className={cn('absolute top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-l-full bg-foreground', collapsed ? '-right-[13px]' : '-right-[21px]')}
+          className={cn('absolute top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-l-full bg-primary', collapsed ? '-right-[13px]' : '-right-[21px]')}
         />
       )}
     </Link>
@@ -217,7 +249,10 @@ function NavButton({
       aria-label={collapsed ? label : undefined}
       className={cn(itemBase, collapsed ? 'size-10 justify-center' : 'w-full px-3 text-left')}
     >
-      <Icon className="size-[18px] shrink-0 text-muted-foreground" strokeWidth={1.75} />
+      <Icon
+        className="size-[18px] shrink-0 text-muted-foreground transition-colors group-hover/item:text-primary"
+        strokeWidth={1.75}
+      />
       {!collapsed && label}
     </button>
   )
@@ -239,7 +274,10 @@ function AppearanceItem({ collapsed }: { collapsed: boolean }) {
         aria-label="Appearance"
         className={cn(itemBase, collapsed ? 'size-10 justify-center' : 'w-full px-3 text-left')}
       >
-        <Icon className="size-[18px] shrink-0 text-muted-foreground" strokeWidth={1.75} />
+        <Icon
+          className="size-[18px] shrink-0 text-muted-foreground transition-colors group-hover/item:text-primary"
+          strokeWidth={1.75}
+        />
         {!collapsed && (
           <>
             Appearance
@@ -283,7 +321,7 @@ function AccountItem({
         itemBase,
         'h-10',
         collapsed ? 'size-10 justify-center' : 'w-full pr-3 pl-2.5',
-        active && 'bg-accent text-foreground',
+        active && 'bg-accent text-accent-foreground',
       )}
     >
       <SenderAvatar name={name ?? ''} address={address} size="sm" />
@@ -300,8 +338,6 @@ function AccountItem({
 
 function LiveStatus({ collapsed }: { collapsed: boolean }) {
   const { live } = useShell()
-  const { data } = useInfo()
-  const host = window.location.hostname || 'localhost'
   const dot = (
     <span
       aria-hidden
@@ -314,7 +350,7 @@ function LiveStatus({ collapsed }: { collapsed: boolean }) {
   const label = live === 'live' ? 'Live' : live === 'offline' ? 'Offline' : 'Connecting'
   if (collapsed) {
     return (
-      <WithTooltip label={`${label} · SMTP ${host}:${data?.ports.smtp ?? 1025}`}>
+      <WithTooltip label={label}>
         <span className="mt-4 flex size-10 items-center justify-center">{dot}</span>
       </WithTooltip>
     )
@@ -323,10 +359,6 @@ function LiveStatus({ collapsed }: { collapsed: boolean }) {
     <div className="mt-4 flex items-center gap-2 px-3 text-[12px] text-muted-foreground" aria-live="polite">
       {dot}
       <span>{label}</span>
-      <span aria-hidden>·</span>
-      <span className="truncate font-mono">
-        SMTP {host}:{data?.ports.smtp ?? 1025}
-      </span>
     </div>
   )
 }
@@ -349,7 +381,7 @@ function IconAction({
         onClick={onClick}
         aria-label={label}
         className={cn(
-          'flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none',
+          'flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-primary focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none',
           className,
         )}
       >
