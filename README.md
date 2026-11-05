@@ -2,7 +2,7 @@
 
 Envry is a local email testing server. It captures every email your application sends over SMTP, gives each recipient a mailbox, and serves those mailboxes back over POP3, IMAP, a REST API and a web UI. Nothing is ever relayed to the internet.
 
-> **Status:** early development. SMTP capture, POP3, IMAP (all with optional TLS), the web UI and the REST API work today.
+> **Status:** early development. SMTP capture, POP3, IMAP (all with optional TLS), the web UI, the REST API, message checks and failure simulation work today.
 
 ## Features
 
@@ -11,6 +11,9 @@ Envry is a local email testing server. It captures every email your application 
 - **POP3 and IMAP** access to every mailbox, so you can test code that receives mail.
 - **Web UI** with three views: Sent, Receivers and Inbox.
 - **REST API and live events** so automated tests can wait for and assert on emails.
+- **Message checks** for a missing plain-text part, images without alt text, Gmail clipping, broken links and spam-prone headers.
+- **Failure simulation** to test how your application handles rejected recipients, temporary errors and slow servers.
+- **`envry send`** to fire a test email from the command line.
 - **One binary** with the UI embedded; no external services.
 
 ## Quick start
@@ -61,6 +64,49 @@ Log in to the POP3 port with a mailbox address as the username, for example `dev
 - `DELE` removes a message from that mailbox only when the session ends with `QUIT`. The message stays in Sent and in other recipients' mailboxes.
 - Supported commands: `USER`, `PASS`, `APOP`, `STAT`, `LIST`, `UIDL`, `RETR`, `TOP`, `DELE`, `NOOP`, `RSET`, `QUIT` and `CAPA`.
 
+## Sending a test email
+
+`envry send` delivers a message to a running Envry over SMTP, which is handy for checking a mail client setup or the web UI without writing code:
+
+```bash
+envry send --to dev@test.local --subject "Hello"
+envry send --to dev@test.local --cc qa@test.local --bcc audit@test.local   --html "<h1>Welcome</h1>" --text "Welcome" --attach invoice.pdf
+```
+
+It uses the `--smtp` address (or `ENVRY_SMTP`), so it finds a server started with the same settings. With `--user` and `--password` it signs in with SMTP AUTH; when the user is an account, a copy is also filed in its Sent folder.
+
+## Message checks
+
+The reader's **Checks** section reviews every message for problems that affect how it renders or whether it reaches the inbox:
+
+| Check | Flags |
+| --- | --- |
+| Plain-text version | HTML-only mail with no `text/plain` alternative |
+| Gmail clipping | HTML larger than 102 KB, which Gmail cuts off |
+| Image alt text | Images without an `alt` attribute (tracking pixels are ignored) |
+| Links | `javascript:` and relative links, empty links, insecure `http://` links and links to local addresses |
+| Required headers | Missing `From`, `Date` or `Message-ID` |
+| Subject line | Empty, all-capitals or `!!!` subjects, common spam phrases and very long subjects |
+| Unsubscribe header | Missing `List-Unsubscribe` and one-click `List-Unsubscribe-Post` headers |
+| Message size | Messages over 10 MB |
+
+**Check links** requests every `http(s)` link with `HEAD` (falling back to `GET`) and shows the status code, so broken links stand out. Envry only makes these requests when you click the button, and checks at most 50 links per message.
+
+## Failure simulation
+
+Start Envry with these flags to see how your application copes when mail delivery goes wrong:
+
+```bash
+envry --smtp-reject-rcpt "bounce@test.local" --smtp-reject-rcpt "*@blocked.test"
+envry --smtp-reject-rate 20 --smtp-latency 3s
+```
+
+- `--smtp-reject-rcpt` refuses matching recipients at `RCPT TO` with `550 5.1.1`. Patterns are case-insensitive and support `*` and `?` wildcards.
+- `--smtp-reject-rate` refuses that percentage of messages with `451 4.3.0` after `DATA`; nothing is stored.
+- `--smtp-latency` waits before answering `DATA`, like a slow or overloaded mail server.
+
+The web UI's Connection dialog shows which simulations are active.
+
 ## Using Envry in automated tests
 
 `GET /api/v1/wait` blocks until a matching email exists and returns it, so a test can trigger an email and assert on its content without polling or sleeping:
@@ -89,6 +135,8 @@ All endpoints live under `/api/v1` and return JSON. Lists are newest first and p
 | `GET` | `/messages/{id}/raw` | The exact bytes received; `?download=1` saves an `.eml` |
 | `GET` | `/messages/{id}/html` | HTML part for previewing; remote content only with `?remote=1` |
 | `GET` | `/messages/{id}/attachments/{aid}` | Attachment download |
+| `GET` | `/messages/{id}/checks` | Message checks and the list of links; makes no network requests |
+| `POST` | `/messages/{id}/checks/links` | Request the message's links and return each status code |
 | `DELETE` | `/messages/{id}`, `/messages` | Delete one message, or all of them |
 | `GET` | `/mailboxes` | Recipient mailboxes with folders, totals and unread counts |
 | `GET` | `/mailboxes/{address}/messages` | One mailbox folder (`?folder=INBOX`) |
@@ -123,6 +171,9 @@ Every flag has a matching environment variable. Flags take precedence over envir
 | `--smtps` / `--imaps` / `--pop3s` | `ENVRY_SMTPS` / `ENVRY_IMAPS` / `ENVRY_POP3S` | `0.0.0.0:1465` / `0.0.0.0:1993` / `0.0.0.0:1995` (with `--tls`) |
 | `--tls-cert` / `--tls-key` | `ENVRY_TLS_CERT` / `ENVRY_TLS_KEY` | self-signed when empty |
 | `--ui-auth` | `ENVRY_UI_AUTH` | none, e.g. `admin:password` |
+| `--smtp-reject-rcpt` (repeatable) | `ENVRY_SMTP_REJECT_RCPT` (comma-separated) | none, e.g. `*@blocked.test` |
+| `--smtp-reject-rate` | `ENVRY_SMTP_REJECT_RATE` | `0` (percent) |
+| `--smtp-latency` | `ENVRY_SMTP_LATENCY` | `0s` |
 | `--log-level` | `ENVRY_LOG_LEVEL` | `info` |
 
 Run `envry --help` for the full list of commands and flags.
@@ -142,10 +193,12 @@ On Windows, run the same targets with `mingw32-make` or any GNU Make 4.x.
 ### Project layout
 
 ```
-cmd/envry/          CLI entry point (serve, version)
+cmd/envry/          CLI entry point (serve, send, version)
 internal/
   api/              REST API, /wait long-poll and /ws event stream
   app/              Wires the servers together and runs them
+  checks/           Message checks and the on-demand link checker
+  compose/          Builds outgoing messages for the API and envry send
   config/           Flags and ENVRY_* environment variables
   events/           In-process publish/subscribe bus
   imapd/            IMAP server (go-imap v2) kept in sync through the event bus

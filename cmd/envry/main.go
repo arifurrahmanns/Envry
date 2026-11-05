@@ -53,7 +53,7 @@ Every flag has an ENVRY_* environment variable; flags win over env.`,
 	}
 	root.RunE = serve.RunE
 
-	root.AddCommand(serve, newVersionCmd())
+	root.AddCommand(serve, newSendCmd(flags), newVersionCmd())
 	return root
 }
 

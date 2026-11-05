@@ -94,9 +94,46 @@ export type Info = {
   /** Implicit-TLS ports are 0 when TLS is off. */
   ports: { smtp: number; pop3: number; imap: number; http: number; smtps: number; pop3s: number; imaps: number }
   tls: { enabled: boolean; selfSigned?: boolean; fingerprint?: string; expires?: string }
-  settings: { maxMessages: number; maxSize: number; strictAuth: boolean }
+  settings: {
+    maxMessages: number
+    maxSize: number
+    strictAuth: boolean
+    /** Failure simulation: recipient patterns refused with 550. */
+    smtpRejectRcpt: string[]
+    /** Failure simulation: percentage of messages refused with 451. */
+    smtpRejectRate: number
+    /** Failure simulation: delay before the reply to DATA. */
+    smtpLatencyMs: number
+  }
   stats: { messages: number; mailboxes: number; accounts: number }
 }
+
+export type CheckStatus = 'pass' | 'info' | 'warn' | 'fail'
+
+/** One finding from the static message checks. */
+export type Check = {
+  id: string
+  title: string
+  status: CheckStatus
+  message: string
+  details: string[]
+}
+
+/** An http(s) link found in the message. */
+export type MessageLink = { url: string; text: string }
+
+export type MessageChecks = { checks: Check[]; links: MessageLink[] }
+
+export type LinkResult = {
+  url: string
+  /** Final HTTP status after redirects; 0 when the request failed. */
+  status: number
+  ok: boolean
+  error?: string
+}
+
+/** Only the first 50 links are requested; total counts them all. */
+export type LinkResults = { results: LinkResult[]; total: number }
 
 export type SendRequest = {
   from: string
@@ -170,6 +207,10 @@ export const api = {
     request<Page<MessageSummary>>(`/messages${query({ limit: PAGE_SIZE, ...p })}`),
   message: (id: string) => request<MessageDetail>(`/messages/${enc(id)}`),
   rawSource: (id: string) => request<string>(`/messages/${enc(id)}/raw`),
+  checks: (id: string) => request<MessageChecks>(`/messages/${enc(id)}/checks`),
+  /** Requests the message's links from the server; only runs when the user asks. */
+  checkLinks: (id: string) =>
+    request<LinkResults>(`/messages/${enc(id)}/checks/links`, { method: 'POST', body: '{}' }),
   deleteMessage: (id: string) => request<void>(`/messages/${enc(id)}`, { method: 'DELETE' }),
   deleteAllMessages: () => request<void>('/messages', { method: 'DELETE' }),
 

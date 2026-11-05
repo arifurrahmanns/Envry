@@ -24,6 +24,7 @@ export const keys = {
   messages: (q = '') => ['messages', { q }] as const,
   message: (id: string) => ['message', id] as const,
   raw: (id: string) => ['message', id, 'raw'] as const,
+  checks: (id: string) => ['message', id, 'checks'] as const,
   mailboxes: ['mailboxes'] as const,
   mailboxMessages: (address: string, folder: string, q = '') =>
     ['mailbox-messages', address, folder, { q }] as const,
@@ -62,6 +63,15 @@ export function useMessage(id: string | null) {
 
 export function useRawSource(id: string, enabled: boolean) {
   return useQuery({ queryKey: keys.raw(id), queryFn: () => api.rawSource(id), enabled })
+}
+
+/** Static checks; a stored message never changes, so they never go stale. */
+export function useMessageChecks(id: string) {
+  return useQuery({ queryKey: keys.checks(id), queryFn: () => api.checks(id), staleTime: Infinity })
+}
+
+export function useCheckLinks(id: string) {
+  return useMutation({ mutationFn: () => api.checkLinks(id) })
 }
 
 export function useMailboxes() {

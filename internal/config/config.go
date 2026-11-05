@@ -8,9 +8,11 @@ import (
 	"log/slog"
 	"net"
 	"os"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/spf13/pflag"
 )
@@ -35,6 +37,15 @@ type Config struct {
 
 	StrictAuth bool
 	Accounts   []Account
+
+	// Failure simulation for testing how the sending app handles errors.
+	// SMTPRejectRcpt holds lower-cased address patterns ("*" wildcards)
+	// refused at RCPT TO with 550; SMTPRejectRate is the percentage of
+	// messages refused at the end of DATA with 451; SMTPLatency delays the
+	// reply to DATA.
+	SMTPRejectRcpt []string
+	SMTPRejectRate int
+	SMTPLatency    time.Duration
 
 	TLS     bool
 	TLSCert string
@@ -68,6 +79,9 @@ type Flags struct {
 	maxSize                string
 	strictAuth             bool
 	accounts               []string
+	rejectRcpt             []string
+	rejectRate             int
+	latency                time.Duration
 	tls                    bool
 	tlsCert, tlsKey        string
 	uiAuth                 string
@@ -93,6 +107,9 @@ var specs = []flagSpec{
 	{name: "max-messages", env: "ENVRY_MAX_MESSAGES"},
 	{name: "max-size", env: "ENVRY_MAX_SIZE"},
 	{name: "strict-auth", env: "ENVRY_STRICT_AUTH"},
+	{name: "smtp-reject-rcpt", env: "ENVRY_SMTP_REJECT_RCPT", list: true},
+	{name: "smtp-reject-rate", env: "ENVRY_SMTP_REJECT_RATE"},
+	{name: "smtp-latency", env: "ENVRY_SMTP_LATENCY"},
 	{name: "account", env: "ENVRY_ACCOUNTS", list: true},
 	{name: "tls", env: "ENVRY_TLS"},
 	{name: "tls-cert", env: "ENVRY_TLS_CERT"},
@@ -118,6 +135,9 @@ func Register(fs *pflag.FlagSet) *Flags {
 	fs.IntVar(&f.maxMessages, "max-messages", 1000, "keep only the newest N messages, 0 = unlimited (env ENVRY_MAX_MESSAGES)")
 	fs.StringVar(&f.maxSize, "max-size", "25MB", "maximum accepted message size, e.g. 512KB, 25MB (env ENVRY_MAX_SIZE)")
 	fs.BoolVar(&f.strictAuth, "strict-auth", false, "require per-account passwords on SMTP/POP3/IMAP (env ENVRY_STRICT_AUTH)")
+	fs.StringArrayVar(&f.rejectRcpt, "smtp-reject-rcpt", nil, "refuse these recipients with 550, * wildcards allowed, repeatable (env ENVRY_SMTP_REJECT_RCPT, comma-separated)")
+	fs.IntVar(&f.rejectRate, "smtp-reject-rate", 0, "refuse this percentage of messages with 451, 0-100 (env ENVRY_SMTP_REJECT_RATE)")
+	fs.DurationVar(&f.latency, "smtp-latency", 0, "delay every SMTP DATA reply, e.g. 2s (env ENVRY_SMTP_LATENCY)")
 	fs.StringArrayVar(&f.accounts, "account", nil, "Inbox account as address[:password], repeatable (env ENVRY_ACCOUNTS, comma-separated)")
 	fs.BoolVar(&f.tls, "tls", false, "enable STARTTLS and the implicit-TLS ports (env ENVRY_TLS)")
 	fs.StringVar(&f.tlsCert, "tls-cert", "", "TLS certificate file; self-signed if empty (env ENVRY_TLS_CERT)")
@@ -209,6 +229,23 @@ func (f *Flags) build() (*Config, error) {
 		}
 		c.Accounts = append(c.Accounts, acct)
 	}
+
+	for _, raw := range f.rejectRcpt {
+		pattern := strings.ToLower(strings.TrimSpace(raw))
+		if _, err := path.Match(pattern, ""); err != nil || pattern == "" {
+			errs = append(errs, fmt.Errorf("--smtp-reject-rcpt %q: invalid pattern", raw))
+			continue
+		}
+		c.SMTPRejectRcpt = append(c.SMTPRejectRcpt, pattern)
+	}
+	if f.rejectRate < 0 || f.rejectRate > 100 {
+		errs = append(errs, fmt.Errorf("--smtp-reject-rate must be between 0 and 100, got %d", f.rejectRate))
+	}
+	c.SMTPRejectRate = f.rejectRate
+	if f.latency < 0 {
+		errs = append(errs, errors.New("--smtp-latency must not be negative"))
+	}
+	c.SMTPLatency = f.latency
 
 	if (c.TLSCert == "") != (c.TLSKey == "") {
 		errs = append(errs, errors.New("--tls-cert and --tls-key must be set together"))

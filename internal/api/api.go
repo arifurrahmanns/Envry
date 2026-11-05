@@ -95,6 +95,8 @@ func (s *Server) Routes() http.Handler {
 		r.Get("/messages/{id}/raw", s.handleRaw)
 		r.Get("/messages/{id}/html", s.handleHTML)
 		r.Get("/messages/{id}/attachments/{aid}", s.handleAttachment)
+		r.Get("/messages/{id}/checks", s.handleChecks)
+		r.Post("/messages/{id}/checks/links", s.handleCheckLinks)
 
 		r.Get("/mailboxes", s.handleListMailboxes)
 		r.Get("/mailboxes/{address}", s.handleGetMailbox)
@@ -131,9 +133,12 @@ type tlsDTO struct {
 }
 
 type settingsDTO struct {
-	MaxMessages int   `json:"maxMessages"`
-	MaxSize     int64 `json:"maxSize"`
-	StrictAuth  bool  `json:"strictAuth"`
+	MaxMessages    int      `json:"maxMessages"`
+	MaxSize        int64    `json:"maxSize"`
+	StrictAuth     bool     `json:"strictAuth"`
+	SMTPRejectRcpt []string `json:"smtpRejectRcpt"`
+	SMTPRejectRate int      `json:"smtpRejectRate"`
+	SMTPLatencyMs  int64    `json:"smtpLatencyMs"`
 }
 
 type infoDTO struct {
@@ -161,9 +166,12 @@ func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
 		Ports:   ports,
 		TLS:     tlsDTO{Enabled: s.tls != nil, TLSInfo: s.tls},
 		Settings: settingsDTO{
-			MaxMessages: s.cfg.MaxMessages,
-			MaxSize:     s.cfg.MaxSize,
-			StrictAuth:  s.cfg.StrictAuth,
+			MaxMessages:    s.cfg.MaxMessages,
+			MaxSize:        s.cfg.MaxSize,
+			StrictAuth:     s.cfg.StrictAuth,
+			SMTPRejectRcpt: append([]string{}, s.cfg.SMTPRejectRcpt...),
+			SMTPRejectRate: s.cfg.SMTPRejectRate,
+			SMTPLatencyMs:  s.cfg.SMTPLatency.Milliseconds(),
 		},
 		Stats: stats,
 	})

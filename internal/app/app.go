@@ -100,11 +100,18 @@ func New(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, error
 	}
 
 	a.smtp = smtpd.New(st, smtpd.Options{
-		MaxMessageBytes: cfg.MaxSize,
-		StrictAuth:      cfg.StrictAuth,
-		TLSConfig:       tlsConfig,
-		Logger:          log,
+		MaxMessageBytes:  cfg.MaxSize,
+		StrictAuth:       cfg.StrictAuth,
+		TLSConfig:        tlsConfig,
+		Logger:           log,
+		RejectRecipients: cfg.SMTPRejectRcpt,
+		RejectRate:       cfg.SMTPRejectRate,
+		Latency:          cfg.SMTPLatency,
 	})
+	if len(cfg.SMTPRejectRcpt) > 0 || cfg.SMTPRejectRate > 0 || cfg.SMTPLatency > 0 {
+		log.Warn("smtp failure simulation enabled", "reject_rcpt", cfg.SMTPRejectRcpt,
+			"reject_rate", cfg.SMTPRejectRate, "latency", cfg.SMTPLatency)
+	}
 	a.pop3 = pop3d.New(st, pop3d.Options{
 		StrictAuth: cfg.StrictAuth,
 		TLSConfig:  tlsConfig,

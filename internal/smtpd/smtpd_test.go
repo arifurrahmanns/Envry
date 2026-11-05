@@ -10,6 +10,7 @@ import (
 	"net/textproto"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/arifurrahmanns/envry/internal/store"
 )
@@ -173,4 +174,56 @@ func (a loginAuth) Next(fromServer []byte, more bool) ([]byte, error) {
 		return []byte(a.pass), nil
 	}
 	return nil, fmt.Errorf("unexpected challenge %q", fromServer)
+}
+
+func TestRejectRecipients(t *testing.T) {
+	st, addr := start(t, Options{RejectRecipients: []string{"bounce@test.local", "*@blocked.test"}})
+	msg := []byte("Subject: hi\r\n\r\nbody\r\n")
+
+	for _, rcpt := range []string{"Bounce@Test.local", "anyone@blocked.test"} {
+		err := smtp.SendMail(addr, nil, "app@example.test", []string{rcpt}, msg)
+		if code := smtpCode(err); code != 550 {
+			t.Errorf("%s: %v (code %d), want 550", rcpt, err, code)
+		}
+	}
+	if err := smtp.SendMail(addr, nil, "app@example.test", []string{"dev@test.local"}, msg); err != nil {
+		t.Errorf("unaffected recipient: %v", err)
+	}
+	page, _ := st.ListMessages(context.Background(), store.ListOptions{})
+	if page.Total != 1 {
+		t.Errorf("stored %d messages, want 1", page.Total)
+	}
+}
+
+func TestRejectRate(t *testing.T) {
+	rolls := []int{10, 90} // first below the rate, second above
+	st, addr := start(t, Options{RejectRate: 50, Roll: func() int {
+		r := rolls[0]
+		rolls = rolls[1:]
+		return r
+	}})
+	msg := []byte("Subject: hi\r\n\r\nbody\r\n")
+
+	err := smtp.SendMail(addr, nil, "app@example.test", []string{"dev@test.local"}, msg)
+	if code := smtpCode(err); code != 451 {
+		t.Errorf("first message: %v (code %d), want 451", err, code)
+	}
+	if err := smtp.SendMail(addr, nil, "app@example.test", []string{"dev@test.local"}, msg); err != nil {
+		t.Errorf("second message: %v", err)
+	}
+	page, _ := st.ListMessages(context.Background(), store.ListOptions{})
+	if page.Total != 1 {
+		t.Errorf("stored %d messages, want 1", page.Total)
+	}
+}
+
+func TestLatency(t *testing.T) {
+	_, addr := start(t, Options{Latency: 300 * time.Millisecond})
+	start := time.Now()
+	if err := smtp.SendMail(addr, nil, "app@example.test", []string{"dev@test.local"}, []byte("Subject: hi\r\n\r\nx\r\n")); err != nil {
+		t.Fatal(err)
+	}
+	if d := time.Since(start); d < 300*time.Millisecond {
+		t.Errorf("sent in %v, want at least 300ms", d)
+	}
 }

@@ -9,7 +9,9 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math/rand/v2"
 	"net"
+	"path"
 	"time"
 
 	"github.com/emersion/go-sasl"
@@ -30,7 +32,32 @@ type Options struct {
 	// listener to Serve.
 	TLSConfig *tls.Config
 	Logger    *slog.Logger
+
+	// Failure simulation, for testing how the sending app handles errors.
+	// RejectRecipients are lower-cased address patterns ("*" wildcards)
+	// refused at RCPT TO with 550.
+	RejectRecipients []string
+	// RejectRate is the percentage (0-100) of messages refused with 451
+	// once DATA is complete.
+	RejectRate int
+	// Latency delays the reply to DATA.
+	Latency time.Duration
+	// Roll returns a number in [0, 100) for RejectRate; tests replace it.
+	Roll func() int
 }
+
+var (
+	errRecipientRejected = &smtp.SMTPError{
+		Code:         550,
+		EnhancedCode: smtp.EnhancedCode{5, 1, 1},
+		Message:      "Recipient rejected (Envry failure simulation)",
+	}
+	errSimulatedFailure = &smtp.SMTPError{
+		Code:         451,
+		EnhancedCode: smtp.EnhancedCode{4, 3, 0},
+		Message:      "Temporary failure, try again later (Envry failure simulation)",
+	}
+)
 
 // Server wraps a go-smtp server backed by the store.
 type Server struct {
@@ -47,6 +74,9 @@ func New(st *store.Store, opts Options) *Server {
 	}
 	if opts.Logger == nil {
 		opts.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
+	}
+	if opts.Roll == nil {
+		opts.Roll = func() int { return rand.IntN(100) }
 	}
 	s := &Server{store: st, log: opts.Logger, opts: opts}
 
@@ -148,6 +178,13 @@ func (ss *session) Mail(from string, _ *smtp.MailOptions) error {
 }
 
 func (ss *session) Rcpt(to string, _ *smtp.RcptOptions) error {
+	addr := store.NormalizeAddress(to)
+	for _, pattern := range ss.s.opts.RejectRecipients {
+		if ok, _ := path.Match(pattern, addr); ok {
+			ss.s.log.Debug("recipient rejected by failure simulation", "rcpt", addr, "pattern", pattern)
+			return errRecipientRejected
+		}
+	}
 	ss.rcpts = append(ss.rcpts, to)
 	return nil
 }
@@ -156,6 +193,13 @@ func (ss *session) Data(r io.Reader) error {
 	raw, err := io.ReadAll(r)
 	if err != nil {
 		return err // ErrDataTooLarge is already an SMTP 552
+	}
+	if d := ss.s.opts.Latency; d > 0 {
+		time.Sleep(d)
+	}
+	if rate := ss.s.opts.RejectRate; rate > 0 && ss.s.opts.Roll() < rate {
+		ss.s.log.Debug("message rejected by failure simulation", "from", ss.from, "rate", rate)
+		return errSimulatedFailure
 	}
 	sum, err := ss.s.store.Ingest(context.Background(), store.IngestInput{
 		EnvelopeFrom: ss.from,

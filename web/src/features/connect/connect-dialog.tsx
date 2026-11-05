@@ -1,9 +1,10 @@
 import { useState } from 'react'
-import { Check, Copy, Lock } from 'lucide-react'
+import { Check, Copy, FlaskConical, Lock } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import type { Info } from '@/lib/api'
 import { useInfo } from '@/lib/queries'
 import { cn } from '@/lib/utils'
 
@@ -12,6 +13,7 @@ export function ConnectDialog({ open, onOpenChange }: { open: boolean; onOpenCha
   const host = window.location.hostname || 'localhost'
   const ports = data?.ports ?? { smtp: 1025, pop3: 1110, imap: 1143, http: 8025, smtps: 0, pop3s: 0, imaps: 0 }
   const tls = data?.tls
+  const chaos = failureSimulation(data?.settings)
   const [lang, setLang] = useState<keyof typeof snippets>('node')
 
   const servers = [
@@ -72,6 +74,20 @@ export function ConnectDialog({ open, onOpenChange }: { open: boolean; onOpenCha
           </div>
         )}
 
+        {chaos.length > 0 && (
+          <div className="flex items-start gap-3 rounded-xl border border-warning/40 bg-warning/5 px-4 py-3">
+            <FlaskConical className="mt-0.5 size-4 shrink-0 text-warning" />
+            <div className="min-w-0 flex-1 space-y-1">
+              <p className="text-sm font-medium">SMTP failure simulation is on</p>
+              <ul className="space-y-0.5 text-sm text-muted-foreground">
+                {chaos.map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        )}
+
         <div className="space-y-3">
           <div role="tablist" aria-label="Framework" className="flex flex-wrap gap-1">
             {(Object.keys(snippets) as (keyof typeof snippets)[]).map((k) => (
@@ -100,6 +116,21 @@ export function ConnectDialog({ open, onOpenChange }: { open: boolean; onOpenCha
       </DialogContent>
     </Dialog>
   )
+}
+
+function failureSimulation(settings?: Info['settings']): string[] {
+  if (!settings) return []
+  const lines: string[] = []
+  if (settings.smtpRejectRcpt.length > 0) {
+    lines.push(`Recipients matching ${settings.smtpRejectRcpt.join(', ')} are refused with 550.`)
+  }
+  if (settings.smtpRejectRate > 0) {
+    lines.push(`${settings.smtpRejectRate}% of messages are refused with 451 after DATA.`)
+  }
+  if (settings.smtpLatencyMs > 0) {
+    lines.push(`Each message is acknowledged after a ${settings.smtpLatencyMs} ms delay.`)
+  }
+  return lines
 }
 
 const snippets = {

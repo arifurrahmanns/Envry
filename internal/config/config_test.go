@@ -4,7 +4,9 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/spf13/pflag"
 )
@@ -51,19 +53,26 @@ func TestDefaults(t *testing.T) {
 
 func TestEnvOverlaysDefaults(t *testing.T) {
 	c, err := load(t, nil, map[string]string{
-		"ENVRY_SMTP":         "127.0.0.1:2525",
-		"ENVRY_IMAPS":        "127.0.0.1:9993",
-		"ENVRY_TLS":          "1",
-		"ENVRY_DB":           ":memory:",
-		"ENVRY_MAX_MESSAGES": "5",
-		"ENVRY_MAX_SIZE":     "512KB",
-		"ENVRY_STRICT_AUTH":  "true",
-		"ENVRY_ACCOUNTS":     "Dev@Test.local:secret, qa@test.local",
-		"ENVRY_UI_AUTH":      "admin:pw",
-		"ENVRY_LOG_LEVEL":    "debug",
+		"ENVRY_SMTP":             "127.0.0.1:2525",
+		"ENVRY_IMAPS":            "127.0.0.1:9993",
+		"ENVRY_TLS":              "1",
+		"ENVRY_DB":               ":memory:",
+		"ENVRY_MAX_MESSAGES":     "5",
+		"ENVRY_MAX_SIZE":         "512KB",
+		"ENVRY_STRICT_AUTH":      "true",
+		"ENVRY_ACCOUNTS":         "Dev@Test.local:secret, qa@test.local",
+		"ENVRY_UI_AUTH":          "admin:pw",
+		"ENVRY_SMTP_REJECT_RCPT": "Bounce@test.local, *@blocked.test",
+		"ENVRY_SMTP_REJECT_RATE": "25",
+		"ENVRY_SMTP_LATENCY":     "1500ms",
+		"ENVRY_LOG_LEVEL":        "debug",
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if strings.Join(c.SMTPRejectRcpt, ",") != "bounce@test.local,*@blocked.test" || c.SMTPRejectRate != 25 ||
+		c.SMTPLatency != 1500*time.Millisecond {
+		t.Errorf("failure simulation env not applied: %+v", c)
 	}
 	if c.IMAPSAddr != "127.0.0.1:9993" || !c.TLS {
 		t.Errorf("TLS env not applied: %+v", c)
@@ -113,6 +122,9 @@ func TestValidationErrors(t *testing.T) {
 		"bad ui-auth":  {"--ui-auth", "nopass"},
 		"bad loglevel": {"--log-level", "loud"},
 		"negative max": {"--max-messages", "-1"},
+		"bad pattern":  {"--smtp-reject-rcpt", "[x"},
+		"bad rate":     {"--smtp-reject-rate", "101"},
+		"bad latency":  {"--smtp-latency", "-1s"},
 	}
 	for name, args := range cases {
 		t.Run(name, func(t *testing.T) {

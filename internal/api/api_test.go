@@ -9,7 +9,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"net/mail"
 	"strings"
 	"testing"
 	"time"
@@ -396,17 +395,54 @@ func TestUnknownRoutesAreJSON(t *testing.T) {
 	}
 }
 
-func TestComposeEncodesNonASCII(t *testing.T) {
-	from := &mail.Address{Address: "me@test.local"}
-	raw, err := composeMessage(from, nil, nil, "Café", "naïve text", "", time.Unix(0, 0))
-	if err != nil {
-		t.Fatal(err)
+func TestChecks(t *testing.T) {
+	e := newEnv(t)
+	site := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/ok" {
+			http.NotFound(w, r)
+		}
+	}))
+	defer site.Close()
+
+	id := e.ingest("From: app@example.test\r\nTo: dev@test.local\r\nSubject: Welcome\r\n"+
+		"Date: Mon, 2 Nov 2026 10:00:00 +0000\r\nMessage-ID: <1@example.test>\r\n"+
+		"Content-Type: text/html; charset=utf-8\r\n\r\n"+
+		`<p><a href="`+site.URL+`/ok">Home</a> <a href="`+site.URL+`/missing">Docs</a></p>`+"\r\n", "dev@test.local")
+
+	var report struct {
+		Checks []struct {
+			ID     string `json:"id"`
+			Status string `json:"status"`
+		} `json:"checks"`
+		Links []struct {
+			URL string `json:"url"`
+		} `json:"links"`
 	}
-	s := string(raw)
-	if !strings.Contains(s, "Content-Transfer-Encoding: quoted-printable") || strings.Contains(s, "naïve") {
-		t.Errorf("body not QP-encoded:\n%s", s)
+	e.json("GET", "/api/v1/messages/"+id+"/checks", nil, 200, &report)
+	statuses := map[string]string{}
+	for _, c := range report.Checks {
+		statuses[c.ID] = c.Status
 	}
-	if !strings.Contains(s, "Subject: =?utf-8?") {
-		t.Errorf("subject not encoded:\n%s", s)
+	if statuses["text-part"] != "fail" || statuses["headers"] != "pass" || len(report.Links) != 2 {
+		t.Errorf("report = %+v", report)
+	}
+
+	var links linkResultsDTO
+	e.json("POST", "/api/v1/messages/"+id+"/checks/links", map[string]any{}, 200, &links)
+	if links.Total != 2 || len(links.Results) != 2 ||
+		!links.Results[0].OK || links.Results[0].Status != 200 ||
+		links.Results[1].OK || links.Results[1].Status != 404 {
+		t.Errorf("link results = %+v", links)
+	}
+
+	e.json("GET", "/api/v1/messages/nope/checks", nil, 404, nil)
+	e.json("POST", "/api/v1/messages/nope/checks/links", map[string]any{}, 404, nil)
+}
+
+func TestInfoFailureSimulation(t *testing.T) {
+	e := newEnv(t)
+	_, b := e.do("GET", "/api/v1/info", nil)
+	if !strings.Contains(string(b), `"smtpRejectRcpt":[]`) || !strings.Contains(string(b), `"smtpRejectRate":0`) {
+		t.Errorf("info = %s", b)
 	}
 }

@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   ArrowLeft,
-  ChevronDown,
   CircleCheck,
   Contrast,
   Download,
@@ -25,6 +24,8 @@ import {
   RemoteContentToggle,
   type PreviewWidth,
 } from '@/components/mail/html-preview'
+import { ChecksSection } from '@/components/mail/message-checks'
+import { Section } from '@/components/mail/section'
 import { SenderAvatar } from '@/components/mail/sender-avatar'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -166,6 +167,9 @@ function ReaderContent({
         )}
 
         <Divider />
+        <ChecksSection messageId={m.id} />
+
+        <Divider />
         <h3 className="text-[15px] font-medium">Activity</h3>
         <Activity message={m} viewingAs={viewingAs} />
       </article>
@@ -239,42 +243,6 @@ function tagsFor(m: MessageDetail, delivery?: Delivery): string[] {
   if (delivery?.flagged) tags.push('Flagged')
   if (delivery && delivery.folder !== 'INBOX') tags.push(delivery.folder)
   return tags
-}
-
-function Section({
-  title,
-  count,
-  defaultOpen = true,
-  aside,
-  children,
-}: {
-  title: string
-  count?: number
-  defaultOpen?: boolean
-  aside?: ReactNode
-  children: ReactNode
-}) {
-  const [open, setOpen] = useState(defaultOpen)
-  return (
-    <section>
-      <div className="flex items-center gap-3">
-        <button
-          type="button"
-          onClick={() => setOpen((o) => !o)}
-          aria-expanded={open}
-          className="-ml-1 flex items-center gap-2 rounded-md px-1 text-[15px] font-medium"
-        >
-          <ChevronDown className={cn('size-4 text-muted-foreground transition-transform', !open && '-rotate-90')} />
-          {title}
-          {count !== undefined && (
-            <span className="text-[13px] font-normal text-muted-foreground tabular-nums">{count}</span>
-          )}
-        </button>
-        {open && aside && <div className="ml-auto">{aside}</div>}
-      </div>
-      {open && <div className="mt-4">{children}</div>}
-    </section>
-  )
 }
 
 function MessageBody({ message: m }: { message: MessageDetail }) {
