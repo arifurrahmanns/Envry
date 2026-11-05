@@ -172,7 +172,7 @@ function ExpandToggle({ onClick }: { onClick: () => void }) {
 }
 
 const itemBase =
-  'group/item relative flex h-10 items-center gap-3 rounded-[10px] border border-transparent text-[14px] text-foreground/85 transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none'
+  'relative flex h-10 items-center gap-3 rounded-[10px] border border-transparent text-[14px] text-foreground/85 transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none'
 
 function NavItem({
   to,
@@ -201,16 +201,10 @@ function NavItem({
       className={cn(
         itemBase,
         collapsed ? 'size-10 justify-center' : 'w-full px-3',
-        active && 'border-primary/30 bg-accent font-medium text-accent-foreground shadow-xs',
+        active && 'border-border bg-accent font-medium text-foreground shadow-xs',
       )}
     >
-      <Icon
-        className={cn(
-          'size-[18px] shrink-0 text-muted-foreground transition-colors group-hover/item:text-primary',
-          active && 'text-primary',
-        )}
-        strokeWidth={1.75}
-      />
+      <Icon className="size-[18px] shrink-0 text-muted-foreground" strokeWidth={1.75} />
       {!collapsed && <span className="truncate">{label}</span>}
       {badge > 0 &&
         (collapsed ? (
@@ -223,7 +217,7 @@ function NavItem({
       {active && marker && (
         <span
           aria-hidden
-          className={cn('absolute top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-l-full bg-primary', collapsed ? '-right-[13px]' : '-right-[21px]')}
+          className={cn('absolute top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-l-full bg-foreground', collapsed ? '-right-[13px]' : '-right-[21px]')}
         />
       )}
     </Link>
@@ -249,10 +243,7 @@ function NavButton({
       aria-label={collapsed ? label : undefined}
       className={cn(itemBase, collapsed ? 'size-10 justify-center' : 'w-full px-3 text-left')}
     >
-      <Icon
-        className="size-[18px] shrink-0 text-muted-foreground transition-colors group-hover/item:text-primary"
-        strokeWidth={1.75}
-      />
+      <Icon className="size-[18px] shrink-0 text-muted-foreground" strokeWidth={1.75} />
       {!collapsed && label}
     </button>
   )
@@ -274,10 +265,7 @@ function AppearanceItem({ collapsed }: { collapsed: boolean }) {
         aria-label="Appearance"
         className={cn(itemBase, collapsed ? 'size-10 justify-center' : 'w-full px-3 text-left')}
       >
-        <Icon
-          className="size-[18px] shrink-0 text-muted-foreground transition-colors group-hover/item:text-primary"
-          strokeWidth={1.75}
-        />
+        <Icon className="size-[18px] shrink-0 text-muted-foreground" strokeWidth={1.75} />
         {!collapsed && (
           <>
             Appearance
@@ -321,7 +309,7 @@ function AccountItem({
         itemBase,
         'h-10',
         collapsed ? 'size-10 justify-center' : 'w-full pr-3 pl-2.5',
-        active && 'bg-accent text-accent-foreground',
+        active && 'bg-accent text-foreground',
       )}
     >
       <SenderAvatar name={name ?? ''} address={address} size="sm" />
@@ -381,7 +369,7 @@ function IconAction({
         onClick={onClick}
         aria-label={label}
         className={cn(
-          'flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-primary focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none',
+          'flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none',
           className,
         )}
       >

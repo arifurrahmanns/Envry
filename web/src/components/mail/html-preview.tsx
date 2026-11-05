@@ -32,7 +32,7 @@ export function DeviceWidthToggle({
               onClick={() => onChange(id)}
               className={cn(
                 'flex size-7 items-center justify-center rounded-md text-muted-foreground hover:text-foreground',
-                value === id && 'bg-accent text-accent-foreground',
+                value === id && 'bg-muted text-foreground',
               )}
             >
               <Icon className="size-4" strokeWidth={1.75} />
@@ -57,7 +57,7 @@ export function RemoteContentToggle({ value, onChange }: { value: boolean; onCha
           onClick={() => onChange(!value)}
           className={cn(
             'flex size-8 items-center justify-center rounded-lg border text-muted-foreground hover:text-foreground',
-            value && 'border-primary/40 bg-accent text-accent-foreground',
+            value && 'bg-muted text-foreground',
           )}
         >
           {value ? <Image className="size-4" strokeWidth={1.75} /> : <ImageOff className="size-4" strokeWidth={1.75} />}

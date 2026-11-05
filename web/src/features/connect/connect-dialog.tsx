@@ -83,7 +83,7 @@ export function ConnectDialog({ open, onOpenChange }: { open: boolean; onOpenCha
                 onClick={() => setLang(k)}
                 className={cn(
                   'h-8 rounded-lg px-3 text-sm text-muted-foreground hover:text-foreground',
-                  lang === k && 'bg-accent font-medium text-accent-foreground',
+                  lang === k && 'bg-muted font-medium text-foreground',
                 )}
               >
                 {snippets[k].label}
