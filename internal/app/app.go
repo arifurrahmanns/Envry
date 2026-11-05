@@ -18,6 +18,8 @@ import (
 
 	"github.com/arifurrahmanns/envry/internal/api"
 	"github.com/arifurrahmanns/envry/internal/config"
+	"github.com/arifurrahmanns/envry/internal/smtpd"
+	"github.com/arifurrahmanns/envry/internal/store"
 	"github.com/arifurrahmanns/envry/internal/webui"
 )
 
@@ -25,28 +27,61 @@ const shutdownTimeout = 5 * time.Second
 
 // App is one running Envry instance.
 type App struct {
-	cfg *config.Config
-	log *slog.Logger
+	cfg   *config.Config
+	log   *slog.Logger
+	store *store.Store
+	api   *api.Server
+	smtp  *smtpd.Server
 
 	httpServer *http.Server
 	httpLn     net.Listener
+	smtpLn     net.Listener
 }
 
 // Addrs are the actual bound addresses (useful when a port was 0).
 type Addrs struct {
 	HTTP string
+	SMTP string
 }
 
-// New builds an App from a resolved config. It does not open any sockets.
-func New(cfg *config.Config, log *slog.Logger) *App {
-	a := &App{cfg: cfg, log: log}
+// New opens the store and builds the servers. It does not open sockets.
+func New(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, error) {
+	st, err := store.Open(ctx, store.Options{
+		Path:        cfg.DBPath,
+		MaxMessages: cfg.MaxMessages,
+		Logger:      log,
+	})
+	if err != nil {
+		return nil, err
+	}
+	for _, acct := range cfg.Accounts {
+		if _, _, err := st.EnsureAccount(ctx, store.AccountInput{Address: acct.Address, Password: acct.Password}); err != nil {
+			st.Close()
+			return nil, fmt.Errorf("account %s: %w", acct.Address, err)
+		}
+	}
+
+	a := &App{
+		cfg:   cfg,
+		log:   log,
+		store: st,
+		api:   api.New(cfg, st, log),
+		smtp: smtpd.New(st, smtpd.Options{
+			MaxMessageBytes: cfg.MaxSize,
+			StrictAuth:      cfg.StrictAuth,
+			Logger:          log,
+		}),
+	}
 	a.httpServer = &http.Server{
 		Handler:           a.routes(),
 		ReadHeaderTimeout: 10 * time.Second,
 		ErrorLog:          slog.NewLogLogger(log.Handler(), slog.LevelWarn),
 	}
-	return a
+	return a, nil
 }
+
+// Store exposes the store, mainly for tests.
+func (a *App) Store() *store.Store { return a.store }
 
 func (a *App) routes() http.Handler {
 	r := chi.NewRouter()
@@ -55,7 +90,8 @@ func (a *App) routes() http.Handler {
 	if a.cfg.UIAuth != nil {
 		r.Use(basicAuth(a.cfg.UIAuth))
 	}
-	r.Mount("/api", api.New(a.cfg, a.log).Routes())
+	r.Mount("/api", a.api.Routes())
+	r.Get("/ws", a.api.HandleWS)
 
 	ui := webui.New()
 	if !ui.Built() {
@@ -67,11 +103,16 @@ func (a *App) routes() http.Handler {
 
 // Listen binds every listener. Call it before Serve, or use Run.
 func (a *App) Listen() error {
-	ln, err := net.Listen("tcp", a.cfg.HTTPAddr)
+	smtpLn, err := net.Listen("tcp", a.cfg.SMTPAddr)
 	if err != nil {
+		return fmt.Errorf("listen smtp %s: %w", a.cfg.SMTPAddr, err)
+	}
+	httpLn, err := net.Listen("tcp", a.cfg.HTTPAddr)
+	if err != nil {
+		smtpLn.Close()
 		return fmt.Errorf("listen http %s: %w", a.cfg.HTTPAddr, err)
 	}
-	a.httpLn = ln
+	a.smtpLn, a.httpLn = smtpLn, httpLn
 	return nil
 }
 
@@ -81,37 +122,51 @@ func (a *App) Addrs() Addrs {
 	if a.httpLn != nil {
 		out.HTTP = a.httpLn.Addr().String()
 	}
+	if a.smtpLn != nil {
+		out.SMTP = a.smtpLn.Addr().String()
+	}
 	return out
 }
 
-// Serve runs until ctx is cancelled or a server fails, then shuts down
-// gracefully.
+// Serve runs until ctx is cancelled or a server fails, then shuts everything
+// down gracefully and closes the store.
 func (a *App) Serve(ctx context.Context) error {
-	if a.httpLn == nil {
+	if a.httpLn == nil || a.smtpLn == nil {
 		return errors.New("app: Serve called before Listen")
 	}
+	a.log.Info("smtp listening", "addr", a.smtpLn.Addr().String())
 	a.log.Info("http listening", "addr", a.httpLn.Addr().String(), "ui", "http://"+displayAddr(a.httpLn.Addr()))
 
-	errc := make(chan error, 1)
+	errc := make(chan error, 2)
 	go func() {
 		if err := a.httpServer.Serve(a.httpLn); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errc <- fmt.Errorf("http server: %w", err)
 		}
-		close(errc)
+	}()
+	go func() {
+		if err := a.smtp.Serve(a.smtpLn); err != nil {
+			errc <- fmt.Errorf("smtp server: %w", err)
+		}
 	}()
 
 	var runErr error
 	select {
 	case <-ctx.Done():
-	case err := <-errc:
-		runErr = err
+	case runErr = <-errc:
 	}
 
 	a.log.Info("shutting down")
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
+	a.api.Close()
 	if err := a.httpServer.Shutdown(shutdownCtx); err != nil {
 		runErr = errors.Join(runErr, fmt.Errorf("http shutdown: %w", err))
+	}
+	if err := a.smtp.Shutdown(shutdownCtx); err != nil {
+		runErr = errors.Join(runErr, fmt.Errorf("smtp shutdown: %w", err))
+	}
+	if err := a.store.Close(); err != nil {
+		runErr = errors.Join(runErr, fmt.Errorf("close store: %w", err))
 	}
 	return runErr
 }
@@ -119,6 +174,7 @@ func (a *App) Serve(ctx context.Context) error {
 // Run is Listen followed by Serve.
 func (a *App) Run(ctx context.Context) error {
 	if err := a.Listen(); err != nil {
+		a.store.Close()
 		return err
 	}
 	return a.Serve(ctx)

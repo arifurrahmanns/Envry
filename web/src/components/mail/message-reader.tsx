@@ -17,7 +17,12 @@ import {
 import type { LucideIcon } from 'lucide-react'
 
 import { useShell } from '@/components/layout/shell-context'
-import { DeviceWidthToggle, HtmlPreview, type PreviewWidth } from '@/components/mail/html-preview'
+import {
+  DeviceWidthToggle,
+  HtmlPreview,
+  RemoteContentToggle,
+  type PreviewWidth,
+} from '@/components/mail/html-preview'
 import { SenderAvatar } from '@/components/mail/sender-avatar'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -79,6 +84,7 @@ function ReaderContent({
   const { openCompose } = useShell()
   const [view, setView] = useState<View>(m.hasHtml ? 'preview' : 'text')
   const [width, setWidth] = useState<PreviewWidth>('desktop')
+  const [remoteContent, setRemoteContent] = useState(false)
 
   const reply = () =>
     openCompose({
@@ -179,14 +185,17 @@ function ReaderContent({
               ))}
           </div>
           {view === 'preview' && (
-            <div className="mb-2 ml-auto hidden sm:block">
-              <DeviceWidthToggle value={width} onChange={setWidth} />
+            <div className="mb-2 ml-auto flex items-center gap-2">
+              <RemoteContentToggle value={remoteContent} onChange={setRemoteContent} />
+              <div className="hidden sm:block">
+                <DeviceWidthToggle value={width} onChange={setWidth} />
+              </div>
             </div>
           )}
         </div>
 
         <div role="tabpanel" className="mt-5 flex min-h-[320px] flex-1 flex-col">
-          {view === 'preview' && <HtmlPreview messageId={m.id} width={width} />}
+          {view === 'preview' && <HtmlPreview messageId={m.id} width={width} remoteContent={remoteContent} />}
           {view === 'text' &&
             (m.text ? (
               <pre className="font-sans text-[15px] leading-relaxed break-words whitespace-pre-wrap text-foreground/80">

@@ -1,0 +1,6 @@
+From: not an address
+To: dev@test.local, broken <, "Q A" <QA@Test.Local>
+Subject: Missing date and broken list
+Content-Type: text/x-unknown; charset=x-made-up
+
+body text

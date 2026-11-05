@@ -10,7 +10,9 @@ type LiveEvent =
   | { type: 'message.deleted'; data: { id: string } }
   | { type: 'messages.cleared'; data: null }
   | { type: 'delivery.updated'; data: { deliveryId: number } }
+  | { type: 'delivery.deleted'; data: { deliveryId: number } }
   | { type: 'mailbox.created'; data: { address: string } }
+  | { type: 'mailbox.updated'; data: { address: string } }
 
 export type LiveStatus = 'connecting' | 'live' | 'offline'
 
@@ -53,10 +55,12 @@ export function useLiveEvents(onOpenMessage: (id: string) => void): LiveStatus {
           invalidateMail()
           break
         case 'delivery.updated':
+        case 'delivery.deleted':
           void qc.invalidateQueries({ queryKey: ['mailbox-messages'] })
           void qc.invalidateQueries({ queryKey: ['mailboxes'] })
           break
         case 'mailbox.created':
+        case 'mailbox.updated':
           void qc.invalidateQueries({ queryKey: ['mailboxes'] })
           break
       }

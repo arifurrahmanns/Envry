@@ -1,4 +1,4 @@
-# Envry development tasks. Requires GNU Make 4+, Go 1.24+ and Node.js 20+.
+# Envry development tasks. Requires GNU Make 4+, Go 1.25+ and Node.js 20+.
 # On Windows, run these with `mingw32-make` (or any GNU Make); recipes work
 # in both sh and cmd.exe.
 

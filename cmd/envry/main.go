@@ -68,7 +68,11 @@ func runServe(cmd *cobra.Command, flags *config.Flags) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	if err := app.New(cfg, log).Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
+	a, err := app.New(ctx, cfg, log)
+	if err != nil {
+		return err
+	}
+	if err := a.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
 		return err
 	}
 	return nil

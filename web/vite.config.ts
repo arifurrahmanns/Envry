@@ -35,7 +35,16 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': { target: api, changeOrigin: true },
-      '/ws': { target: api.replace(/^http/, 'ws'), ws: true, changeOrigin: true },
+      '/ws': {
+        target: api.replace(/^http/, 'ws'),
+        ws: true,
+        changeOrigin: true,
+        // The server only accepts same-origin WebSockets; present the
+        // proxied request as coming from the API's own origin.
+        configure: (proxy) => {
+          proxy.on('proxyReqWs', (proxyReq) => proxyReq.setHeader('origin', api))
+        },
+      },
     },
   },
   build: {

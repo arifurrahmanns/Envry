@@ -1,0 +1,21 @@
+From: "Ava Lindqvist" <Ava@Northwind.test>
+To: Dev User <dev@test.local>, qa@test.local
+Cc: ops@test.local
+Reply-To: support@northwind.test
+Subject: Welcome to Northwind
+Date: Thu, 05 Nov 2026 14:34:00 +0000
+Message-ID: <welcome-1@northwind.test>
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="alt"
+
+--alt
+Content-Type: text/plain; charset=utf-8
+
+Hi there,
+
+Thanks for signing up.
+--alt
+Content-Type: text/html; charset=utf-8
+
+<html><head><style>p{color:red}</style><title>Welcome</title></head><body><p>Hi there,</p><p>Thanks for <b>signing up</b>.</p></body></html>
+--alt--

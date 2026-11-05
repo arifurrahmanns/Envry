@@ -1,4 +1,4 @@
-import { Monitor, Smartphone, Tablet } from 'lucide-react'
+import { Image, ImageOff, Monitor, Smartphone, Tablet } from 'lucide-react'
 
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { urls } from '@/lib/api'
@@ -45,19 +45,51 @@ export function DeviceWidthToggle({
   )
 }
 
+export function RemoteContentToggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
+  const label = value ? 'Block remote images' : 'Load remote images'
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          aria-pressed={value}
+          aria-label={label}
+          onClick={() => onChange(!value)}
+          className={cn(
+            'flex size-8 items-center justify-center rounded-lg border text-muted-foreground hover:text-foreground',
+            value && 'bg-muted text-foreground',
+          )}
+        >
+          {value ? <Image className="size-4" strokeWidth={1.75} /> : <ImageOff className="size-4" strokeWidth={1.75} />}
+        </button>
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
+  )
+}
+
 /**
- * Renders the server-sanitised HTML in a sandboxed iframe: no scripts, no
- * same-origin access. Emails are designed for a white canvas, so the frame
+ * Renders the message HTML in a sandboxed iframe: no scripts, no forms, no
+ * same-origin access (the server adds a matching CSP). Remote images load
+ * only on request. Emails are designed for a white canvas, so the frame
  * stays white in dark mode too.
  */
-export function HtmlPreview({ messageId, width }: { messageId: string; width: PreviewWidth }) {
+export function HtmlPreview({
+  messageId,
+  width,
+  remoteContent,
+}: {
+  messageId: string
+  width: PreviewWidth
+  remoteContent: boolean
+}) {
   const px = widths.find((w) => w.id === width)?.px ?? null
   return (
     <div className="flex h-full justify-center overflow-x-auto rounded-lg border bg-muted/40">
       <iframe
-        key={messageId}
+        key={`${messageId}-${remoteContent}`}
         title="Email preview"
-        src={urls.html(messageId)}
+        src={urls.html(messageId, remoteContent)}
         sandbox="allow-popups allow-popups-to-escape-sandbox"
         referrerPolicy="no-referrer"
         className={cn('h-full min-h-[480px] bg-email-canvas transition-[width] duration-150', px ? 'border-x shadow-xs' : 'w-full rounded-lg')}

@@ -92,6 +92,8 @@ export type Info = {
   version: string
   commit: string
   ports: { smtp: number; pop3: number; imap: number; http: number }
+  settings: { maxMessages: number; maxSize: number; strictAuth: boolean }
+  stats: { messages: number; mailboxes: number; accounts: number }
 }
 
 export type SendRequest = {
@@ -192,7 +194,8 @@ export const api = {
 
 /** URLs the browser loads directly (iframe, downloads). */
 export const urls = {
-  html: (id: string) => `${base}/messages/${enc(id)}/html`,
+  html: (id: string, remoteContent = false) =>
+    `${base}/messages/${enc(id)}/html${remoteContent ? '?remote=1' : ''}`,
   raw: (id: string, download = false) =>
     `${base}/messages/${enc(id)}/raw${download ? '?download=1' : ''}`,
   attachment: (id: string, aid: string) =>

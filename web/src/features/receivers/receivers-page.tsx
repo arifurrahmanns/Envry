@@ -16,7 +16,8 @@ import { useMailboxes } from '@/lib/queries'
 export function ReceiversPage() {
   const [q] = useSearchQuery()
   const { data, isLoading, error, refetch } = useMailboxes()
-  const all = data?.items ?? []
+  // Accounts with no mail yet live under Inbox, not here.
+  const all = (data?.items ?? []).filter((m) => m.total > 0)
   const needle = q.toLowerCase()
   const shown = needle
     ? all.filter((m) => m.address.includes(needle) || (m.displayName ?? '').toLowerCase().includes(needle))

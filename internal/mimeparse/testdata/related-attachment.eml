@@ -1,0 +1,27 @@
+From: billing@northwind.test
+To: dev@test.local
+Subject: Invoice INV-2041
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="mixed"
+
+--mixed
+Content-Type: multipart/related; boundary="rel"
+
+--rel
+Content-Type: text/html; charset=utf-8
+
+<p>Your invoice <img src="cid:logo@northwind" alt="Northwind"></p>
+--rel
+Content-Type: image/png
+Content-ID: <logo@northwind>
+Content-Transfer-Encoding: base64
+
+iVBORw0KGgo=
+--rel--
+--mixed
+Content-Type: application/pdf; name="INV-2041.pdf"
+Content-Disposition: attachment; filename="INV-2041.pdf"
+Content-Transfer-Encoding: base64
+
+JVBERi0xLjQK
+--mixed--

@@ -1,0 +1,6 @@
+From: noreply@acme.test
+To: dev@test.local
+Subject: Your code
+Content-Type: text/html; charset=utf-8
+
+<div><h1>Your code is 482913</h1><script>alert(1)</script><p>It expires in   10 minutes.</p></div>
