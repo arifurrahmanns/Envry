@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/smtp"
+	"net/textproto"
 	"strings"
 	"testing"
 	"time"
@@ -42,7 +43,7 @@ func start(t *testing.T, cfg *config.Config) Addrs {
 
 func testConfig() *config.Config {
 	return &config.Config{
-		SMTPAddr: "127.0.0.1:0", POP3Addr: "127.0.0.1:1110",
+		SMTPAddr: "127.0.0.1:0", POP3Addr: "127.0.0.1:0",
 		IMAPAddr: "127.0.0.1:1143", HTTPAddr: "127.0.0.1:0",
 		DBPath: ":memory:", MaxMessages: 1000, MaxSize: 1 << 20,
 	}
@@ -102,6 +103,48 @@ func TestSMTPToAPI(t *testing.T) {
 	}
 	if res, _ := get(t, base+"/api/nope", nil); res.StatusCode != 404 {
 		t.Errorf("/api/nope: %d", res.StatusCode)
+	}
+}
+
+func TestSMTPToPOP3(t *testing.T) {
+	addrs := start(t, testConfig())
+	msg := "From: app@example.test\r\nTo: dev@test.local\r\nSubject: Via POP3\r\n\r\nHello POP3\r\n"
+	if err := smtp.SendMail(addrs.SMTP, nil, "app@example.test", []string{"dev@test.local"}, []byte(msg)); err != nil {
+		t.Fatal(err)
+	}
+
+	conn, err := textproto.Dial("tcp", addrs.POP3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	expectOK := func(cmd string) string {
+		t.Helper()
+		if cmd != "" {
+			if err := conn.PrintfLine("%s", cmd); err != nil {
+				t.Fatal(err)
+			}
+		}
+		line, err := conn.ReadLine()
+		if err != nil || !strings.HasPrefix(line, "+OK") {
+			t.Fatalf("%q: %q, %v", cmd, line, err)
+		}
+		return line
+	}
+	expectOK("")
+	expectOK("USER dev@test.local")
+	expectOK("PASS x")
+	expectOK("RETR 1")
+	body, err := conn.ReadDotLines()
+	if err != nil || !strings.Contains(strings.Join(body, "\n"), "Hello POP3") {
+		t.Fatalf("RETR body = %q, %v", body, err)
+	}
+	expectOK("DELE 1")
+	expectOK("QUIT")
+
+	_, out := get(t, "http://"+addrs.HTTP+"/api/v1/mailboxes/dev@test.local/messages", nil)
+	if !strings.Contains(out, `"total":0`) {
+		t.Errorf("mailbox after POP3 DELE+QUIT: %s", out)
 	}
 }
 

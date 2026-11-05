@@ -271,6 +271,23 @@ func (s *Store) RemoveAccount(ctx context.Context, address string) error {
 	return nil
 }
 
+// AccountPassword returns an account's stored password ("" when it accepts
+// any password) and whether the address is an account at all. APOP needs
+// the shared secret itself to verify a digest.
+func (s *Store) AccountPassword(ctx context.Context, address string) (string, bool, error) {
+	var stored sql.NullString
+	var isAccount bool
+	err := s.db.QueryRowContext(ctx, `SELECT is_account, password FROM mailboxes WHERE address = ?`,
+		NormalizeAddress(address)).Scan(&isAccount, &stored)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, fmt.Errorf("account password: %w", err)
+	}
+	return stored.String, isAccount, nil
+}
+
 // CheckPassword verifies login credentials for strict auth. Accounts with
 // no password accept any password; unknown addresses are rejected.
 func (s *Store) CheckPassword(ctx context.Context, address, password string) (bool, error) {

@@ -2,7 +2,7 @@
 
 Envry is a local email testing server. It captures every email your application sends over SMTP, gives each recipient a mailbox, and serves those mailboxes back over POP3, IMAP, a REST API and a web UI. Nothing is ever relayed to the internet.
 
-> **Status:** early development. SMTP capture, the web UI and the REST API work today; POP3 and IMAP are being built.
+> **Status:** early development. SMTP capture, POP3, the web UI and the REST API work today; IMAP is being built.
 
 ## Features
 
@@ -30,6 +30,14 @@ Then open <http://localhost:8025> and point your application at `localhost:1025`
 | POP3 | 1110 |
 | IMAP | 1143 |
 | Web UI and API | 8025 |
+
+## Reading mail over POP3
+
+Log in to the POP3 port with a mailbox address as the username, for example `dev@test.local`. Any password is accepted unless `--strict-auth` is set, in which case the address must be an account and the password must match. The maildrop is that mailbox's INBOX, oldest message first.
+
+- `RETR` marks the message as read in the web UI; `TOP` does not.
+- `DELE` removes a message from that mailbox only when the session ends with `QUIT`. The message stays in Sent and in other recipients' mailboxes.
+- Supported commands: `USER`, `PASS`, `APOP`, `STAT`, `LIST`, `UIDL`, `RETR`, `TOP`, `DELE`, `NOOP`, `RSET`, `QUIT` and `CAPA`.
 
 ## Using Envry in automated tests
 
@@ -118,6 +126,7 @@ internal/
   config/           Flags and ENVRY_* environment variables
   events/           In-process publish/subscribe bus
   mimeparse/        Raw message → addresses, bodies, attachments
+  pop3d/            POP3 server (RFC 1939)
   smtpd/            SMTP capture server
   store/            SQLite storage, migrations and queries
   version/          Build metadata

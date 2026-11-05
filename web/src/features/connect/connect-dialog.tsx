@@ -25,7 +25,9 @@ export function ConnectDialog({ open, onOpenChange }: { open: boolean; onOpenCha
         <DialogHeader>
           <DialogTitle>Connection settings</DialogTitle>
           <DialogDescription>
-            Any username and password are accepted. No TLS is needed for local testing.
+            SMTP accepts any username and password. For POP3 and IMAP, log in with a mailbox address
+            such as <span className="font-mono text-foreground/80">dev@test.local</span>; any password
+            works unless strict auth is on. No TLS is needed for local testing.
           </DialogDescription>
         </DialogHeader>
 

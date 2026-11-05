@@ -125,13 +125,13 @@ func insertMessage(tx *sql.Tx, sum MessageSummary, p *mimeparse.Message, in Inge
 	}
 	_, err := tx.Exec(`
 		INSERT INTO messages (id, message_id_hdr, envelope_from, recipients, from_hdr, to_hdr, cc_hdr,
-			reply_to_hdr, subject, date_hdr, preview, size, has_html, has_text, attachment_count,
-			source, client_ip, auth_user, received_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			reply_to_hdr, subject, date_hdr, preview, size, wire_size, has_html, has_text,
+			attachment_count, source, client_ip, auth_user, received_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		sum.ID, toNull(p.MessageID), NormalizeAddress(in.EnvelopeFrom), mustJSON(nonNilRcpts(rcpts)),
 		mustJSON(sum.From), mustJSON(sum.To), mustJSON(sum.Cc), mustJSON(nonNil(p.ReplyTo)),
-		sum.Subject, date, sum.Preview, sum.Size, sum.HasHTML, sum.HasText, sum.AttachmentCount,
-		sum.Source, toNull(in.ClientIP), toNull(in.AuthUser), millis(sum.ReceivedAt),
+		sum.Subject, date, sum.Preview, sum.Size, len(mimeparse.CRLF(in.Raw)), sum.HasHTML, sum.HasText,
+		sum.AttachmentCount, sum.Source, toNull(in.ClientIP), toNull(in.AuthUser), millis(sum.ReceivedAt),
 	)
 	if err != nil {
 		return fmt.Errorf("insert message: %w", err)
