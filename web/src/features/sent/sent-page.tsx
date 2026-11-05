@@ -1,12 +1,11 @@
 import { useState } from 'react'
-import { Inbox, Mails, Plug, Send, Trash2 } from 'lucide-react'
+import { Inbox, Plug, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { PageHeader } from '@/components/layout/page-header'
 import { useShell } from '@/components/layout/shell-context'
-import { Toolbar, ToolbarTab } from '@/components/layout/toolbar'
-import { ConnectBanner } from '@/components/mail/connect-banner'
 import { EmptyState } from '@/components/mail/empty-state'
+import { ListTab } from '@/components/mail/list-tab'
 import { MailPanes } from '@/components/mail/mail-panes'
 import { MessageList } from '@/components/mail/message-list'
 import { MessageReader } from '@/components/mail/message-reader'
@@ -19,49 +18,56 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
+import { DropdownMenuItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu'
 import { useParam, useSearchQuery } from '@/hooks/use-search-query'
-import { neighbourOf } from '@/lib/selection'
+import { count } from '@/lib/format'
 import { useDeleteAllMessages, useDeleteMessage, useMessages } from '@/lib/queries'
+import { neighbourOf } from '@/lib/selection'
 
 export function SentPage() {
   const [q] = useSearchQuery()
   const [selected, setSelected] = useParam('m')
   const { openCompose, openConnect } = useShell()
+  const [clearing, setClearing] = useState(false)
   const messages = useMessages(q)
   const deleteOne = useDeleteMessage()
 
   const items = messages.data?.pages.flatMap((p) => p.items) ?? []
   const total = messages.data?.pages[0]?.total
 
-  const remove = async (ids: string[]) => {
-    try {
-      await Promise.all(ids.map((id) => deleteOne.mutateAsync(id)))
-      toast.success(ids.length === 1 ? 'Message deleted' : `${ids.length} messages deleted`)
-    } catch (err) {
-      toast.error('Delete failed', { description: (err as Error).message })
-      throw err
-    }
-  }
-
-  const deleteSelected = (id: string) => {
-    const next = neighbourOf(items, id)
-    void remove([id]).then(() => setSelected(next), () => undefined)
+  const remove = (id: string) => {
+    const next = id === selected ? neighbourOf(items, id) : selected
+    deleteOne.mutate(id, {
+      onSuccess: () => {
+        toast.success('Message deleted')
+        setSelected(next)
+      },
+      onError: (err) => toast.error('Delete failed', { description: err.message }),
+    })
   }
 
   return (
     <>
-      <PageHeader icon={Send} title="Sent" total={total} />
-      <Toolbar actions={items.length > 0 && <ClearAll />}>
-        <ToolbarTab to="/sent" icon={Mails} label="All mail" count={total} active />
-      </Toolbar>
+      <PageHeader title="Sent" subtitle={total !== undefined ? `${count(total)} ${total === 1 ? 'email' : 'emails'}` : undefined} />
       <MailPanes
         list={
           <MessageList
-            title={q ? `Results for “${q}”` : 'All mail'}
-            banner={!q && <ConnectBanner />}
+            tabs={<ListTab to="/sent" label="All mail" count={total} active />}
+            menu={
+              <>
+                <DropdownMenuItem onSelect={openConnect}>
+                  <Plug />
+                  Connection settings
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem variant="destructive" disabled={items.length === 0} onSelect={() => setClearing(true)}>
+                  <Trash2 />
+                  Delete all messages
+                </DropdownMenuItem>
+              </>
+            }
             mode="sent"
             items={items}
             selectedId={selected}
@@ -102,30 +108,22 @@ export function SentPage() {
           selected ? (
             <MessageReader
               id={selected}
-              showEnvelope
               onBack={() => setSelected(null)}
-              onDelete={() => deleteSelected(selected)}
+              onDelete={() => remove(selected)}
               deleting={deleteOne.isPending}
             />
           ) : null
         }
       />
+      <ClearAllDialog open={clearing} onOpenChange={setClearing} />
     </>
   )
 }
 
-function ClearAll() {
-  const [open, setOpen] = useState(false)
+function ClearAllDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const clear = useDeleteAllMessages()
-
   return (
-    <AlertDialog open={open} onOpenChange={setOpen}>
-      <AlertDialogTrigger asChild>
-        <Button variant="ghost" className="h-9 gap-2 text-muted-foreground">
-          <Trash2 className="size-4" />
-          <span className="hidden sm:inline">Clear all</span>
-        </Button>
-      </AlertDialogTrigger>
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>Delete every captured email?</AlertDialogTitle>
@@ -140,7 +138,7 @@ function ClearAll() {
             onClick={() =>
               clear.mutate(undefined, {
                 onSuccess: () => toast.success('All messages deleted'),
-                onError: (err) => toast.error('Clear failed', { description: err.message }),
+                onError: (err) => toast.error('Delete failed', { description: err.message }),
               })
             }
           >

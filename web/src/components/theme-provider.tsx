@@ -22,7 +22,7 @@ function readStoredTheme(): Theme {
   } catch {
     // storage blocked (private mode etc.): fall through to default
   }
-  return 'light'
+  return 'dark'
 }
 
 function resolve(theme: Theme): 'dark' | 'light' {

@@ -5,14 +5,19 @@ import { EmptyState } from '@/components/mail/empty-state'
 import { cn } from '@/lib/utils'
 
 /**
- * List + reader side by side. On narrow screens only one pane shows: the
- * list, or the reader once a message is selected.
+ * List and detail columns, full height, divided by a border. On narrow
+ * screens only one shows: the list, or the detail once a message is open.
  */
 export function MailPanes({ list, reader }: { list: ReactNode; reader: ReactNode | null }) {
   const hasSelection = reader !== null
   return (
-    <div className="flex min-h-0 flex-1 gap-4 p-3 md:p-4">
-      <div className={cn('flex min-h-0 w-full flex-col md:w-[360px] md:shrink-0 xl:w-[400px]', hasSelection && 'hidden md:flex')}>
+    <div className="flex min-h-0 flex-1">
+      <div
+        className={cn(
+          'flex min-h-0 w-full flex-col md:w-[420px] md:shrink-0 md:border-r lg:w-[460px] xl:w-[508px]',
+          hasSelection && 'hidden md:flex',
+        )}
+      >
         {list}
       </div>
       <div className={cn('min-h-0 min-w-0 flex-1 flex-col', hasSelection ? 'flex' : 'hidden md:flex')}>
@@ -24,17 +29,15 @@ export function MailPanes({ list, reader }: { list: ReactNode; reader: ReactNode
 
 function NoSelection() {
   return (
-    <div className="flex flex-1 rounded-xl border bg-card">
-      <EmptyState
-        icon={MailOpen}
-        title="No message selected"
-        description={
-          <>
-            Pick a message from the list. Use <Kbd>j</Kbd> and <Kbd>k</Kbd> to move, <Kbd>/</Kbd> to search.
-          </>
-        }
-      />
-    </div>
+    <EmptyState
+      icon={MailOpen}
+      title="No message selected"
+      description={
+        <>
+          Pick a message from the list. Use <Kbd>j</Kbd> and <Kbd>k</Kbd> to move, <Kbd>/</Kbd> to search.
+        </>
+      }
+    />
   )
 }
 

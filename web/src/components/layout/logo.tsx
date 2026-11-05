@@ -1,17 +1,22 @@
-import { Mail } from 'lucide-react'
-
 import { cn } from '@/lib/utils'
 
+/** Envry mark: an envelope whose flap is a lightning stroke. */
 export function Logo({ className }: { className?: string }) {
   return (
-    <div
-      className={cn(
-        'flex size-9 items-center justify-center rounded-[10px] bg-primary text-primary-foreground shadow-xs',
-        className,
-      )}
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2.25}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={cn('size-7 text-foreground', className)}
+      role="img"
+      aria-label="Envry"
     >
-      <Mail className="size-[18px]" strokeWidth={2} aria-hidden />
-      <span className="sr-only">Envry</span>
-    </div>
+      <rect x="2.5" y="5" width="19" height="14" rx="2.5" />
+      <path d="m3 6.5 7.2 5.4h3.6L21 6.5" />
+      <path d="m13.5 10.5-2 3.5h3l-2 3.5" strokeWidth={1.75} />
+    </svg>
   )
 }

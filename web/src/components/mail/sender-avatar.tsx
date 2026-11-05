@@ -12,9 +12,10 @@ const palettes = [
 ]
 
 const sizes = {
-  sm: 'size-7 text-[11px]',
-  md: 'size-9 text-xs',
-  lg: 'size-10 text-sm',
+  xs: 'size-5 text-[8px]',
+  sm: 'size-6 text-[10px]',
+  md: 'size-9 text-[12px]',
+  lg: 'size-10 text-[13px]',
 }
 
 export function SenderAvatar({

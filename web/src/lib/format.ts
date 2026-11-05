@@ -1,21 +1,65 @@
-import { format, isThisYear, isToday, isYesterday } from 'date-fns'
+import { differenceInMinutes, format, isThisYear, isToday, isYesterday } from 'date-fns'
 
 import type { Address, MessageSummary } from '@/lib/api'
 
-/** List timestamp: "14:05" today, "Yesterday", "Jun 29", or "Jun 29, 2025". */
-export function listTime(iso: string): string {
+function parse(iso: string): Date | null {
   const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return ''
-  if (isToday(d)) return format(d, 'HH:mm')
+  return Number.isNaN(d.getTime()) ? null : d
+}
+
+/** Short date: "Today", "Yesterday", "Jun 29", or "Jun 29, 2025". */
+export function listTime(iso: string): string {
+  const d = parse(iso)
+  if (!d) return ''
+  if (isToday(d)) return format(d, 'h:mm a')
   if (isYesterday(d)) return 'Yesterday'
   return isThisYear(d) ? format(d, 'MMM d') : format(d, 'MMM d, yyyy')
 }
 
-/** Reader timestamp: "Thu, Jun 29, 2026 at 14:05". */
+/** Row time: "now", "5m ago" and "3h ago" today; "3:29 PM" on earlier days. */
+export function rowTime(iso: string, now = new Date()): string {
+  const d = parse(iso)
+  if (!d) return ''
+  if (!isToday(d)) return format(d, 'h:mm a')
+  const mins = Math.max(0, differenceInMinutes(now, d))
+  if (mins < 1) return 'now'
+  if (mins < 60) return `${mins}m ago`
+  return `${Math.floor(mins / 60)}h ago`
+}
+
+/** Day heading for grouped lists: "Today", "Yesterday", "Aug 21". */
+export function dayLabel(iso: string): string {
+  const d = parse(iso)
+  if (!d) return 'Unknown date'
+  if (isToday(d)) return 'Today'
+  if (isYesterday(d)) return 'Yesterday'
+  return isThisYear(d) ? format(d, 'MMM d') : format(d, 'MMM d, yyyy')
+}
+
+/** Splits a newest-first list into consecutive day groups. */
+export function groupByDay<T>(items: T[], date: (item: T) => string): { label: string; items: T[] }[] {
+  const groups: { label: string; items: T[] }[] = []
+  for (const item of items) {
+    const label = dayLabel(date(item))
+    const last = groups[groups.length - 1]
+    if (last && last.label === label) last.items.push(item)
+    else groups.push({ label, items: [item] })
+  }
+  return groups
+}
+
+/** Reader timestamp: "Thu, Jun 29, 2026 at 2:05 PM". */
 export function fullTime(iso: string): string {
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return ''
-  return format(d, "EEE, MMM d, yyyy 'at' HH:mm")
+  const d = parse(iso)
+  if (!d) return ''
+  return format(d, "EEE, MMM d, yyyy 'at' h:mm a")
+}
+
+/** Property timestamp: "Nov 5, 2026, 2:05 PM". */
+export function mediumTime(iso: string): string {
+  const d = parse(iso)
+  if (!d) return ''
+  return format(d, 'MMM d, yyyy, h:mm a')
 }
 
 export function fileSize(bytes: number): string {

@@ -1,17 +1,18 @@
 import { useEffect, type ReactNode } from 'react'
-import { Inbox } from 'lucide-react'
-import type { LucideIcon } from 'lucide-react'
+import { CheckCheck, Inbox, Plug } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { PageHeader } from '@/components/layout/page-header'
-import { Toolbar, ToolbarTab } from '@/components/layout/toolbar'
+import { useShell } from '@/components/layout/shell-context'
 import { EmptyState } from '@/components/mail/empty-state'
+import { ListTab } from '@/components/mail/list-tab'
 import { MailPanes } from '@/components/mail/mail-panes'
 import { MessageList } from '@/components/mail/message-list'
 import { MessageReader } from '@/components/mail/message-reader'
+import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
 import { useParam, useSearchQuery } from '@/hooks/use-search-query'
 import type { Delivery, Mailbox } from '@/lib/api'
-import { DEFAULT_FOLDER, folderIcon, folderLabel, sortFolders } from '@/lib/folders'
+import { DEFAULT_FOLDER, folderLabel, sortFolders } from '@/lib/folders'
 import { isDelivery } from '@/lib/messages'
 import { useDeleteDelivery, useMailboxMessages, useUpdateDelivery } from '@/lib/queries'
 import { neighbourOf } from '@/lib/selection'
@@ -20,16 +21,16 @@ type MailboxViewProps = {
   mailbox: Mailbox
   /** Route of this mailbox, e.g. /receivers/dev%40test.local */
   basePath: string
-  icon: LucideIcon
   title: ReactNode
-  /** Left side of the list header (back link or account switcher). */
-  listTitle: ReactNode
+  subtitle?: ReactNode
+  back?: string
 }
 
-export function MailboxView({ mailbox, basePath, icon, title, listTitle }: MailboxViewProps) {
+export function MailboxView({ mailbox, basePath, title, subtitle, back }: MailboxViewProps) {
   const [q] = useSearchQuery()
   const [folderParam] = useParam('folder')
   const [selected, setSelected] = useParam('m')
+  const { openConnect } = useShell()
   const folders = sortFolders(mailbox.folders)
   const folder = folders.find((f) => f.name === folderParam)?.name ?? DEFAULT_FOLDER
 
@@ -38,7 +39,6 @@ export function MailboxView({ mailbox, basePath, icon, title, listTitle }: Mailb
   const deleteOne = useDeleteDelivery()
 
   const items = (messages.data?.pages.flatMap((p) => p.items) ?? []).filter(isDelivery)
-  const total = messages.data?.pages[0]?.total
   const current: Delivery | undefined = items.find((d) => d.id === selected)
 
   // Opening an unread message marks it read for this mailbox only.
@@ -47,48 +47,70 @@ export function MailboxView({ mailbox, basePath, icon, title, listTitle }: Mailb
     if (current && !current.seen) mutate({ id: current.deliveryId, seen: true })
   }, [current, mutate])
 
-  const remove = async (ids: string[]) => {
-    const targets = items.filter((d) => ids.includes(d.id))
-    try {
-      await Promise.all(targets.map((d) => deleteOne.mutateAsync(d.deliveryId)))
-      toast.success(targets.length === 1 ? 'Message deleted' : `${targets.length} messages deleted`)
-    } catch (err) {
-      toast.error('Delete failed', { description: (err as Error).message })
-      throw err
-    }
+  const byId = (id: string) => items.find((d) => d.id === id)
+
+  const remove = (id: string) => {
+    const d = byId(id)
+    if (!d) return
+    const next = id === selected ? neighbourOf(items, id) : selected
+    deleteOne.mutate(d.deliveryId, {
+      onSuccess: () => {
+        toast.success('Message deleted')
+        setSelected(next)
+      },
+      onError: (err) => toast.error('Delete failed', { description: err.message }),
+    })
+  }
+
+  const toggleSeen = (id: string) => {
+    const d = byId(id)
+    if (d) update.mutate({ id: d.deliveryId, seen: !d.seen })
+  }
+
+  const markAllRead = () => {
+    const unread = items.filter((d) => !d.seen)
+    for (const d of unread) update.mutate({ id: d.deliveryId, seen: true })
+    toast.success(unread.length === 0 ? 'Nothing to mark' : `Marked ${unread.length} as read`)
   }
 
   const folderHref = (name: string) => {
-    const p = new URLSearchParams()
-    if (name !== DEFAULT_FOLDER) p.set('folder', name)
-    const s = p.toString()
-    return s ? `${basePath}?${s}` : basePath
+    if (name === DEFAULT_FOLDER) return basePath
+    return `${basePath}?${new URLSearchParams({ folder: name })}`
   }
 
   return (
     <>
-      <PageHeader icon={icon} title={title} total={total} />
-      <Toolbar>
-        {folders.map((f) => (
-          <ToolbarTab
-            key={f.name}
-            to={folderHref(f.name)}
-            icon={folderIcon(f)}
-            label={folderLabel(f.name)}
-            count={f.name.toUpperCase() === 'INBOX' ? f.total : undefined}
-            active={f.name === folder}
-          />
-        ))}
-      </Toolbar>
+      <PageHeader title={title} subtitle={subtitle} back={back} />
       <MailPanes
         list={
           <MessageList
-            title={listTitle}
+            tabs={folders.map((f) => (
+              <ListTab
+                key={f.name}
+                to={folderHref(f.name)}
+                label={folderLabel(f.name)}
+                count={f.name === DEFAULT_FOLDER ? f.total : undefined}
+                active={f.name === folder}
+              />
+            ))}
+            menu={
+              <>
+                <DropdownMenuItem onSelect={markAllRead}>
+                  <CheckCheck />
+                  Mark all as read
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={openConnect}>
+                  <Plug />
+                  Connection settings
+                </DropdownMenuItem>
+              </>
+            }
             mode="mailbox"
             items={items}
             selectedId={selected}
             onSelect={setSelected}
             onDelete={remove}
+            onToggleSeen={toggleSeen}
             isLoading={messages.isLoading}
             error={messages.error}
             onRetry={() => void messages.refetch()}
@@ -118,10 +140,7 @@ export function MailboxView({ mailbox, basePath, icon, title, listTitle }: Mailb
               delivery={current}
               viewingAs={mailbox.address}
               onBack={() => setSelected(null)}
-              onDelete={() => {
-                const next = neighbourOf(items, selected)
-                void remove([selected]).then(() => setSelected(next), () => undefined)
-              }}
+              onDelete={() => remove(selected)}
               deleting={deleteOne.isPending}
               onToggleSeen={
                 current

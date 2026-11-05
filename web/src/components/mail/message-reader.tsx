@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   ArrowLeft,
-  ChevronRight,
+  ChevronDown,
+  CircleCheck,
+  Contrast,
   Download,
-  EyeOff,
   File,
   FileArchive,
   FileImage,
@@ -12,6 +13,7 @@ import {
   Mail,
   MailOpen,
   Reply,
+  Server,
   Trash2,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
@@ -28,7 +30,7 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { urls, type Address, type Attachment, type Delivery, type MessageDetail } from '@/lib/api'
-import { displayName, fileSize, formatAddress, fullTime, messageTime } from '@/lib/format'
+import { dayLabel, displayName, fileSize, mediumTime, messageTime, rowTime } from '@/lib/format'
 import { useMessage, useRawSource } from '@/lib/queries'
 import { cn } from '@/lib/utils'
 
@@ -38,9 +40,8 @@ type MessageReaderProps = {
   id: string
   /** Set in mailbox views: this copy's folder, flags and recipient type. */
   delivery?: Delivery
-  /** Mailbox address being viewed, for the "Viewing as" notice. */
+  /** Mailbox address being viewed. */
   viewingAs?: string
-  showEnvelope?: boolean
   onBack: () => void
   onDelete: () => void
   deleting: boolean
@@ -51,51 +52,235 @@ export function MessageReader(props: MessageReaderProps) {
   const { id, onBack } = props
   const { data, isLoading, error } = useMessage(id)
 
-  return (
-    <section aria-label="Message" className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border bg-card">
-      {isLoading ? (
-        <ReaderSkeleton onBack={onBack} />
-      ) : error || !data ? (
-        <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
-          <p className="text-sm text-muted-foreground">
-            {error ? `Couldn't load this message: ${error.message}` : 'Message not found.'}
-          </p>
-          <Button variant="outline" size="sm" onClick={onBack}>
-            Back to list
-          </Button>
-        </div>
-      ) : (
-        <ReaderContent key={data.id} {...props} message={data} />
-      )}
-    </section>
-  )
+  if (isLoading) return <ReaderSkeleton onBack={onBack} />
+  if (error || !data) {
+    return (
+      <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
+        <p className="text-sm text-muted-foreground">
+          {error ? `Couldn't load this message: ${error.message}` : 'Message not found.'}
+        </p>
+        <Button variant="outline" size="sm" onClick={onBack}>
+          Back to list
+        </Button>
+      </div>
+    )
+  }
+  return <ReaderContent key={data.id} {...props} message={data} />
 }
 
 function ReaderContent({
   message: m,
   delivery,
   viewingAs,
-  showEnvelope,
   onBack,
   onDelete,
   deleting,
   onToggleSeen,
 }: MessageReaderProps & { message: MessageDetail }) {
   const { openCompose } = useShell()
-  const [view, setView] = useState<View>(m.hasHtml ? 'preview' : 'text')
-  const [width, setWidth] = useState<PreviewWidth>('desktop')
-  const [remoteContent, setRemoteContent] = useState(false)
-
   const reply = () =>
     openCompose({
       to: (m.replyTo[0] ?? m.from).address,
       subject: /^re:/i.test(m.subject) ? m.subject : `Re: ${m.subject}`,
     })
-
   useReaderKeys({ onDelete, onReply: reply, onToggleSeen, onBack })
 
   // A recipient never sees the Bcc list; only the Sent view shows it.
-  const bcc = viewingAs ? [] : m.recipients.filter((r) => r.type === 'bcc')
+  const bcc = viewingAs ? [] : m.recipients.filter((r) => r.type === 'bcc').map((r) => ({ name: '', address: r.address }))
+
+  return (
+    <div className="min-h-0 flex-1 overflow-y-auto">
+      <article className="px-5 pt-6 pb-10 md:px-8">
+        <div className="flex items-center gap-1">
+          <ActionButton icon={ArrowLeft} label="Back" onClick={onBack} className="-ml-2 md:hidden" />
+          <div className="ml-auto flex items-center gap-1">
+            <ActionButton icon={Reply} label="Reply" shortcut="R" onClick={reply} />
+            {delivery && onToggleSeen && (
+              <ActionButton
+                icon={delivery.seen ? Mail : MailOpen}
+                label={delivery.seen ? 'Mark as unread' : 'Mark as read'}
+                shortcut="U"
+                onClick={onToggleSeen}
+              />
+            )}
+            <ActionButton icon={Download} label="Download .eml" href={urls.raw(m.id, true)} />
+            <ActionButton
+              icon={deleting ? Loader2 : Trash2}
+              label="Delete"
+              shortcut="#"
+              onClick={onDelete}
+              disabled={deleting}
+              iconClassName={deleting ? 'animate-spin' : undefined}
+            />
+          </div>
+        </div>
+
+        <h2 className="mt-3 text-[26px] leading-tight font-medium tracking-tight text-balance break-words md:text-[28px]">
+          {m.subject || '(no subject)'}
+        </h2>
+        {m.preview && (
+          <p className="mt-3 line-clamp-2 max-w-3xl text-[14px] leading-relaxed text-muted-foreground">{m.preview}</p>
+        )}
+
+        <dl className="mt-6 grid grid-cols-[96px_minmax(0,1fr)] items-center gap-x-4 gap-y-3 text-[14px] sm:grid-cols-[112px_minmax(0,1fr)]">
+          <Property label="Status">
+            <StatusPill delivery={delivery} />
+          </Property>
+          <Property label="From">
+            <PersonChip address={m.from} />
+          </Property>
+          <PeopleProperty label="To" list={m.to} />
+          <PeopleProperty label="Cc" list={m.cc} />
+          <PeopleProperty label="Bcc" list={bcc} />
+          {viewingAs && (
+            <Property label="Mailbox">
+              <PersonChip
+                address={{ name: '', address: viewingAs }}
+                suffix={delivery?.rcptType === 'bcc' ? 'Bcc copy' : undefined}
+              />
+            </Property>
+          )}
+          <Property label="Date">{mediumTime(messageTime(m))}</Property>
+          <Property label="Size">{fileSize(m.size)}</Property>
+          <Property label="Tags">
+            <div className="flex flex-wrap gap-1.5">
+              {tagsFor(m, delivery).map((t) => (
+                <span key={t} className="rounded-full bg-muted px-3 py-1 text-[13px] text-foreground/85">
+                  {t}
+                </span>
+              ))}
+            </div>
+          </Property>
+        </dl>
+
+        <Divider />
+        <MessageBody message={m} />
+
+        {m.attachments.length > 0 && (
+          <>
+            <Divider />
+            <Section title="Attachments" count={m.attachments.length}>
+              <Attachments messageId={m.id} items={m.attachments} />
+            </Section>
+          </>
+        )}
+
+        <Divider />
+        <h3 className="text-[15px] font-medium">Activity</h3>
+        <Activity message={m} viewingAs={viewingAs} />
+      </article>
+    </div>
+  )
+}
+
+function Divider() {
+  return <div aria-hidden className="my-6 h-px bg-border" />
+}
+
+function Property({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <>
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className="min-w-0">{children}</dd>
+    </>
+  )
+}
+
+function PeopleProperty({ label, list }: { label: string; list: Address[] }) {
+  if (list.length === 0) return null
+  return (
+    <Property label={label}>
+      <div className="flex flex-wrap gap-1.5">
+        {list.map((a) => (
+          <PersonChip key={a.address} address={a} />
+        ))}
+      </div>
+    </Property>
+  )
+}
+
+function PersonChip({ address: a, suffix }: { address: Address; suffix?: string }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="inline-flex max-w-full items-center gap-1.5 rounded-full border py-0.5 pr-2.5 pl-0.5 text-[14px]">
+          <SenderAvatar name={a.name} address={a.address} size="xs" />
+          <span className="truncate">{displayName(a)}</span>
+          {suffix && <span className="shrink-0 text-muted-foreground">({suffix})</span>}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent>{a.address}</TooltipContent>
+    </Tooltip>
+  )
+}
+
+function StatusPill({ delivery }: { delivery?: Delivery }) {
+  const [label, Icon, tone] = !delivery
+    ? (['Captured', CircleCheck, 'bg-success/15 text-success'] as const)
+    : delivery.seen
+      ? (['Read', CircleCheck, 'bg-success/15 text-success'] as const)
+      : (['Unread', Contrast, 'bg-warning/15 text-warning'] as const)
+  return (
+    <span className={cn('inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[14px] font-medium', tone)}>
+      <Icon className="size-4" strokeWidth={2} />
+      {label}
+    </span>
+  )
+}
+
+const sourceLabel: Record<string, string> = { smtp: 'SMTP', api: 'API', imap_append: 'IMAP' }
+
+function tagsFor(m: MessageDetail, delivery?: Delivery): string[] {
+  const tags = [sourceLabel[m.source] ?? m.source]
+  if (m.hasHtml) tags.push('HTML')
+  if (m.hasText) tags.push('Plain text')
+  if (m.attachments.length > 0) tags.push(`${m.attachments.length} attachment${m.attachments.length === 1 ? '' : 's'}`)
+  if (delivery?.rcptType === 'bcc') tags.push('Bcc')
+  if (delivery?.flagged) tags.push('Flagged')
+  if (delivery && delivery.folder !== 'INBOX') tags.push(delivery.folder)
+  return tags
+}
+
+function Section({
+  title,
+  count,
+  defaultOpen = true,
+  aside,
+  children,
+}: {
+  title: string
+  count?: number
+  defaultOpen?: boolean
+  aside?: ReactNode
+  children: ReactNode
+}) {
+  const [open, setOpen] = useState(defaultOpen)
+  return (
+    <section>
+      <div className="flex items-center gap-3">
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          aria-expanded={open}
+          className="-ml-1 flex items-center gap-2 rounded-md px-1 text-[15px] font-medium"
+        >
+          <ChevronDown className={cn('size-4 text-muted-foreground transition-transform', !open && '-rotate-90')} />
+          {title}
+          {count !== undefined && (
+            <span className="text-[13px] font-normal text-muted-foreground tabular-nums">{count}</span>
+          )}
+        </button>
+        {open && aside && <div className="ml-auto">{aside}</div>}
+      </div>
+      {open && <div className="mt-4">{children}</div>}
+    </section>
+  )
+}
+
+function MessageBody({ message: m }: { message: MessageDetail }) {
+  const [view, setView] = useState<View>(m.hasHtml ? 'preview' : 'text')
+  const [width, setWidth] = useState<PreviewWidth>('desktop')
+  const [remoteContent, setRemoteContent] = useState(false)
   const views: { id: View; label: string; hidden?: boolean }[] = [
     { id: 'preview', label: 'Preview', hidden: !m.hasHtml },
     { id: 'text', label: 'Text' },
@@ -104,167 +289,52 @@ function ReaderContent({
   ]
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto">
-      <div className="flex min-h-full flex-col px-5 pt-5 pb-6 md:px-6">
-        <div className="flex items-center gap-2">
-          <ActionButton icon={ArrowLeft} label="Back" onClick={onBack} className="md:hidden" />
-          <ActionButton icon={Download} label="Download .eml" href={urls.raw(m.id, true)} />
-          <ActionButton
-            icon={deleting ? Loader2 : Trash2}
-            label="Delete"
-            shortcut="#"
-            onClick={onDelete}
-            disabled={deleting}
-            iconClassName={deleting ? 'animate-spin' : undefined}
-          />
-          <ActionButton icon={Reply} label="Reply" shortcut="R" onClick={reply} />
-          {delivery && onToggleSeen && (
-            <ActionButton
-              icon={delivery.seen ? Mail : MailOpen}
-              label={delivery.seen ? 'Mark as unread' : 'Mark as read'}
-              shortcut="U"
-              onClick={onToggleSeen}
-            />
-          )}
-          <time dateTime={messageTime(m)} className="ml-auto hidden text-sm text-muted-foreground sm:block">
-            {fullTime(messageTime(m))}
-          </time>
-        </div>
-
-        {viewingAs && (
-          <div className="mt-5 flex items-center gap-2 rounded-lg border bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
-            {delivery?.rcptType === 'bcc' ? <EyeOff className="size-4 shrink-0" /> : <Mail className="size-4 shrink-0" />}
-            <span className="min-w-0 truncate">
-              Viewing as <span className="font-medium text-foreground">{viewingAs}</span>
-              {delivery?.rcptType === 'bcc' && ' — received as a blind copy (Bcc), hidden from other recipients'}
-            </span>
-          </div>
-        )}
-
-        <div className="mt-6 flex items-center gap-3">
-          <SenderAvatar name={m.from.name} address={m.from.address} size="lg" />
-          <div className="min-w-0">
-            <p className="truncate text-lg font-medium">{displayName(m.from)}</p>
-            <p className="truncate text-sm text-muted-foreground">
-              From: <span className="text-foreground/80">{m.from.address}</span>
-            </p>
-          </div>
-        </div>
-
-        <h2 className="mt-6 text-2xl font-semibold tracking-tight text-balance break-words">
-          {m.subject || '(no subject)'}
-        </h2>
-
-        <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
-          <AddressRow label="To" list={m.to} />
-          <AddressRow label="Cc" list={m.cc} />
-          <AddressRow label="Bcc" list={bcc.map((r) => ({ name: '', address: r.address }))} />
-          <AddressRow label="Reply-To" list={m.replyTo} />
-        </dl>
-
-        {showEnvelope && <Envelope message={m} />}
-
-        <div className="mt-6 flex items-center gap-3 border-b">
-          <div role="tablist" aria-label="Message view" className="-mb-px flex gap-4">
-            {views
-              .filter((v) => !v.hidden)
-              .map((v) => (
-                <button
-                  key={v.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={view === v.id}
-                  onClick={() => setView(v.id)}
-                  className={cn(
-                    'border-b-2 border-transparent pb-2.5 text-sm text-muted-foreground transition-colors hover:text-foreground',
-                    view === v.id && 'border-foreground font-medium text-foreground',
-                  )}
-                >
-                  {v.label}
-                </button>
-              ))}
-          </div>
-          {view === 'preview' && (
-            <div className="mb-2 ml-auto flex items-center gap-2">
-              <RemoteContentToggle value={remoteContent} onChange={setRemoteContent} />
-              <div className="hidden sm:block">
-                <DeviceWidthToggle value={width} onChange={setWidth} />
-              </div>
+    <Section
+      title="Message"
+      aside={
+        view === 'preview' && (
+          <div className="flex items-center gap-2">
+            <RemoteContentToggle value={remoteContent} onChange={setRemoteContent} />
+            <div className="hidden sm:block">
+              <DeviceWidthToggle value={width} onChange={setWidth} />
             </div>
-          )}
-        </div>
-
-        <div role="tabpanel" className="mt-5 flex min-h-[320px] flex-1 flex-col">
-          {view === 'preview' && <HtmlPreview messageId={m.id} width={width} remoteContent={remoteContent} />}
-          {view === 'text' &&
-            (m.text ? (
-              <pre className="font-sans text-[15px] leading-relaxed break-words whitespace-pre-wrap text-foreground/80">
-                {m.text}
-              </pre>
-            ) : (
-              <p className="text-sm text-muted-foreground">This message has no plain-text part.</p>
-            ))}
-          {view === 'source' && <SourceView id={m.id} />}
-          {view === 'headers' && <HeadersView message={m} />}
-        </div>
-
-        {m.attachments.length > 0 && <Attachments messageId={m.id} items={m.attachments} />}
-      </div>
-    </div>
-  )
-}
-
-function AddressRow({ label, list }: { label: string; list: Address[] }) {
-  if (list.length === 0) return null
-  return (
-    <>
-      <dt className="text-muted-foreground">{label}:</dt>
-      <dd className="min-w-0 break-words text-foreground/80">{list.map(formatAddress).join(', ')}</dd>
-    </>
-  )
-}
-
-function Envelope({ message: m }: { message: MessageDetail }) {
-  const rows: [string, ReactNode][] = [
-    ['MAIL FROM', m.envelopeFrom || '<>'],
-    [
-      'RCPT TO',
-      <ul key="rcpt" className="space-y-1">
-        {m.recipients.map((r) => (
-          <li key={r.address + r.type} className="flex items-center gap-2">
-            <span className="w-8 shrink-0 rounded border px-1 text-center text-[10px] font-medium text-muted-foreground uppercase">
-              {r.type}
-            </span>
-            <span className="min-w-0 break-all">{r.address}</span>
-          </li>
-        ))}
-      </ul>,
-    ],
-    ['Message-ID', m.messageId ?? '—'],
-    ['Client IP', m.clientIp ?? '—'],
-    ['Auth user', m.authUser ?? '—'],
-    ['Size', fileSize(m.size)],
-    ['Received', fullTime(m.receivedAt)],
-  ]
-
-  return (
-    <details className="group mt-4 rounded-lg border">
-      <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-sm text-muted-foreground select-none hover:text-foreground [&::-webkit-details-marker]:hidden">
-        <ChevronRight className="size-4 transition-transform group-open:rotate-90" />
-        SMTP envelope
-        <span className="ml-auto text-xs tabular-nums">
-          {m.recipients.length} recipient{m.recipients.length === 1 ? '' : 's'}
-        </span>
-      </summary>
-      <dl className="grid grid-cols-[7rem_1fr] gap-x-3 gap-y-2 border-t px-3 py-3 font-mono text-xs">
-        {rows.map(([k, v]) => (
-          <div key={k} className="contents">
-            <dt className="text-muted-foreground">{k}</dt>
-            <dd className="min-w-0 break-all">{v}</dd>
           </div>
-        ))}
-      </dl>
-    </details>
+        )
+      }
+    >
+      <div role="tablist" aria-label="Message view" className="mb-4 flex flex-wrap gap-1">
+        {views
+          .filter((v) => !v.hidden)
+          .map((v) => (
+            <button
+              key={v.id}
+              type="button"
+              role="tab"
+              aria-selected={view === v.id}
+              onClick={() => setView(v.id)}
+              className={cn(
+                'h-8 rounded-[10px] px-3 text-[14px] text-foreground/75 transition-colors hover:text-foreground',
+                view === v.id && 'bg-muted font-medium text-foreground',
+              )}
+            >
+              {v.label}
+            </button>
+          ))}
+      </div>
+      <div role="tabpanel" className="flex min-h-[360px] flex-col">
+        {view === 'preview' && <HtmlPreview messageId={m.id} width={width} remoteContent={remoteContent} />}
+        {view === 'text' &&
+          (m.text ? (
+            <pre className="font-sans text-[15px] leading-relaxed break-words whitespace-pre-wrap text-foreground/85">
+              {m.text}
+            </pre>
+          ) : (
+            <p className="text-sm text-muted-foreground">This message has no plain-text part.</p>
+          ))}
+        {view === 'source' && <SourceView id={m.id} />}
+        {view === 'headers' && <HeadersView message={m} />}
+      </div>
+    </Section>
   )
 }
 
@@ -273,7 +343,7 @@ function SourceView({ id }: { id: string }) {
   if (isLoading) return <Skeleton className="h-64 w-full" />
   if (error) return <p className="text-sm text-muted-foreground">Couldn't load the source: {error.message}</p>
   return (
-    <pre className="overflow-x-auto rounded-lg border bg-muted/40 p-4 font-mono text-xs leading-relaxed whitespace-pre-wrap break-all">
+    <pre className="overflow-x-auto rounded-xl border bg-card p-4 font-mono text-xs leading-relaxed break-all whitespace-pre-wrap">
       {data}
     </pre>
   )
@@ -281,12 +351,12 @@ function SourceView({ id }: { id: string }) {
 
 function HeadersView({ message: m }: { message: MessageDetail }) {
   return (
-    <div className="overflow-hidden rounded-lg border">
+    <div className="overflow-hidden rounded-xl border">
       <table className="w-full text-left font-mono text-xs">
         <tbody className="divide-y">
           {m.headers.map((h, i) => (
             <tr key={`${h.name}-${i}`} className="align-top">
-              <th scope="row" className="w-48 bg-muted/40 px-3 py-2 font-medium whitespace-nowrap text-muted-foreground">
+              <th scope="row" className="w-48 bg-card px-3 py-2 font-medium whitespace-nowrap text-muted-foreground">
                 {h.name}
               </th>
               <td className="px-3 py-2 break-all">{h.value}</td>
@@ -306,42 +376,85 @@ function attachmentIcon(type: string): LucideIcon {
 }
 
 function Attachments({ messageId, items }: { messageId: string; items: Attachment[] }) {
-  const total = items.reduce((n, a) => n + a.size, 0)
   return (
-    <div className="mt-8">
-      <div className="flex items-baseline gap-2">
-        <h3 className="text-[15px] font-medium">Attachments</h3>
-        <span className="text-sm text-muted-foreground tabular-nums">
-          {items.length} file{items.length === 1 ? '' : 's'} · {fileSize(total)}
+    <ul className="space-y-1">
+      {items.map((a) => {
+        const Icon = attachmentIcon(a.contentType)
+        return (
+          <li key={a.id}>
+            <a
+              href={urls.attachment(messageId, a.id)}
+              download={a.filename || undefined}
+              className="group -mx-2 flex items-center gap-3 rounded-lg px-2 py-1.5 text-[14px] transition-colors hover:bg-accent"
+            >
+              <Icon className="size-[18px] shrink-0 text-muted-foreground" strokeWidth={1.75} />
+              <span className="min-w-0 flex-1 truncate text-foreground/90">{a.filename || 'Untitled'}</span>
+              <span className="shrink-0 text-[13px] text-muted-foreground tabular-nums">{fileSize(a.size)}</span>
+              <Download className="size-4 shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100" />
+            </a>
+          </li>
+        )
+      })}
+    </ul>
+  )
+}
+
+function ago(iso: string): string {
+  const day = dayLabel(iso)
+  return day === 'Today' ? rowTime(iso) : day
+}
+
+const rcptLabel: Record<string, string> = { to: 'To', cc: 'Cc', bcc: 'Bcc' }
+
+function Activity({ message: m, viewingAs }: { message: MessageDetail; viewingAs?: string }) {
+  const when = ago(m.receivedAt)
+  const via = sourceLabel[m.source] ?? m.source
+  // A recipient only learns about other recipients' Bcc copies in Sent.
+  const recipients = viewingAs ? m.recipients.filter((r) => r.type !== 'bcc' || r.address === viewingAs) : m.recipients
+
+  return (
+    <ul className="mt-4 space-y-3 text-[14px]">
+      <ActivityItem avatar={<SenderAvatar name={m.from.name} address={m.from.address} size="xs" />} when={when}>
+        <strong className="font-medium">{displayName(m.from)}</strong>
+        <span className="text-muted-foreground"> sent this message</span>
+      </ActivityItem>
+      <ActivityItem avatar={<SystemAvatar icon={Server} />} when={when}>
+        <strong className="font-medium">Envry</strong>
+        <span className="text-muted-foreground">
+          {' '}
+          captured it over {via}
+          {m.clientIp && ` from ${m.clientIp}`}
+          {m.authUser && ` as ${m.authUser}`}
         </span>
-      </div>
-      <ul className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-        {items.map((a) => {
-          const Icon = attachmentIcon(a.contentType)
-          return (
-            <li key={a.id}>
-              <a
-                href={urls.attachment(messageId, a.id)}
-                download={a.filename || undefined}
-                className="flex items-center gap-3 rounded-xl border bg-background p-3 shadow-xs transition-colors hover:bg-muted/50"
-              >
-                <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                  <Icon className="size-[18px]" strokeWidth={1.75} />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium">{a.filename || 'Untitled'}</span>
-                  <span className="block truncate text-xs text-muted-foreground">
-                    {fileSize(a.size)} · {a.contentType}
-                    {a.inline && ' · inline'}
-                  </span>
-                </span>
-                <Download className="size-4 shrink-0 text-muted-foreground" />
-              </a>
-            </li>
-          )
-        })}
-      </ul>
-    </div>
+      </ActivityItem>
+      {recipients.map((r) => (
+        <ActivityItem key={r.address + r.type} avatar={<SenderAvatar name="" address={r.address} size="xs" />} when={when}>
+          <span className="text-muted-foreground">Delivered to </span>
+          <strong className="font-medium">{r.address}</strong>
+          <span className="text-muted-foreground"> as {rcptLabel[r.type] ?? r.type}</span>
+        </ActivityItem>
+      ))}
+    </ul>
+  )
+}
+
+function ActivityItem({ avatar, when, children }: { avatar: ReactNode; when: string; children: ReactNode }) {
+  return (
+    <li className="flex items-center gap-2.5">
+      {avatar}
+      <span className="min-w-0 truncate">
+        {children}
+        <span className="text-muted-foreground"> • {when}</span>
+      </span>
+    </li>
+  )
+}
+
+function SystemAvatar({ icon: Icon }: { icon: LucideIcon }) {
+  return (
+    <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
+      <Icon className="size-3" strokeWidth={2} />
+    </span>
   )
 }
 
@@ -364,19 +477,19 @@ function ActionButton({
   className?: string
   iconClassName?: string
 }) {
-  const classes = cn('size-9 rounded-lg text-muted-foreground shadow-xs hover:text-foreground', className)
+  const classes = cn('size-9 rounded-[10px] text-muted-foreground hover:text-foreground', className)
   const icon = <Icon className={cn('size-[18px]', iconClassName)} strokeWidth={1.75} />
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         {href ? (
-          <Button asChild variant="outline" size="icon" className={classes}>
+          <Button asChild variant="ghost" size="icon" className={classes}>
             <a href={href} aria-label={label} download>
               {icon}
             </a>
           </Button>
         ) : (
-          <Button variant="outline" size="icon" className={classes} onClick={onClick} disabled={disabled} aria-label={label}>
+          <Button variant="ghost" size="icon" className={classes} onClick={onClick} disabled={disabled} aria-label={label}>
             {icon}
           </Button>
         )}
@@ -391,27 +504,26 @@ function ActionButton({
 
 function ReaderSkeleton({ onBack }: { onBack: () => void }) {
   return (
-    <div className="space-y-6 px-6 pt-5" aria-busy="true" aria-label="Loading message">
-      <div className="flex gap-2">
-        <Button variant="outline" size="icon" className="size-9 rounded-lg md:hidden" onClick={onBack} aria-label="Back">
+    <div className="space-y-6 px-5 pt-6 md:px-8" aria-busy="true" aria-label="Loading message">
+      <div className="flex justify-between">
+        <Button variant="ghost" size="icon" className="-ml-2 md:hidden" onClick={onBack} aria-label="Back">
           <ArrowLeft />
         </Button>
-        {[0, 1, 2].map((i) => (
-          <Skeleton key={i} className="size-9 rounded-lg" />
-        ))}
-      </div>
-      <div className="flex items-center gap-3">
-        <Skeleton className="size-10 rounded-full" />
-        <div className="space-y-2">
-          <Skeleton className="h-5 w-40" />
-          <Skeleton className="h-4 w-56" />
+        <div className="ml-auto flex gap-1">
+          {[0, 1, 2, 3].map((i) => (
+            <Skeleton key={i} className="size-9 rounded-[10px]" />
+          ))}
         </div>
       </div>
-      <Skeleton className="h-7 w-2/3" />
-      <div className="space-y-2">
-        <Skeleton className="h-4 w-full" />
-        <Skeleton className="h-4 w-11/12" />
-        <Skeleton className="h-4 w-3/4" />
+      <Skeleton className="h-8 w-3/4" />
+      <Skeleton className="h-4 w-1/2" />
+      <div className="space-y-3">
+        {[0, 1, 2, 3, 4].map((i) => (
+          <div key={i} className="flex gap-4">
+            <Skeleton className="h-5 w-20" />
+            <Skeleton className="h-5 w-48" />
+          </div>
+        ))}
       </div>
     </div>
   )

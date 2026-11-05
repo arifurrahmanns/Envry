@@ -34,7 +34,7 @@ function MessageRedirect() {
 function NotFound() {
   return (
     <>
-      <PageHeader icon={Compass} title="Not found" />
+      <PageHeader title="Not found" />
       <EmptyState
         icon={Compass}
         title="This page doesn't exist"

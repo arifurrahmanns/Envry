@@ -1,8 +1,8 @@
+import type { ReactNode } from 'react'
 import { Link, useParams } from 'react-router'
-import { ArrowLeft, RotateCw, Users } from 'lucide-react'
+import { RotateCw, Users } from 'lucide-react'
 
 import { PageHeader } from '@/components/layout/page-header'
-import { Toolbar, ToolbarTab } from '@/components/layout/toolbar'
 import { EmptyState } from '@/components/mail/empty-state'
 import { SenderAvatar } from '@/components/mail/sender-avatar'
 import { Button } from '@/components/ui/button'
@@ -10,7 +10,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { MailboxView } from '@/features/mailbox/mailbox-view'
 import { useSearchQuery } from '@/hooks/use-search-query'
 import type { Mailbox } from '@/lib/api'
-import { count, listTime } from '@/lib/format'
+import { count, dayLabel, rowTime } from '@/lib/format'
 import { useMailboxes } from '@/lib/queries'
 
 export function ReceiversPage() {
@@ -26,20 +26,14 @@ export function ReceiversPage() {
   return (
     <>
       <PageHeader
-        icon={Users}
         title="Receivers"
-        total={data ? all.length : undefined}
-        unit={['recipient', 'recipients']}
-        searchPlaceholder="Search recipients"
+        subtitle={data ? `${count(all.length)} ${all.length === 1 ? 'recipient' : 'recipients'}` : undefined}
       />
-      <Toolbar>
-        <ToolbarTab to="/receivers" icon={Users} label="All recipients" count={all.length} active />
-      </Toolbar>
-      <div className="min-h-0 flex-1 overflow-y-auto p-3 md:p-4">
+      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-6 md:px-8">
         {isLoading ? (
           <Grid>
             {Array.from({ length: 6 }, (_, i) => (
-              <Skeleton key={i} className="h-[124px] rounded-xl" />
+              <Skeleton key={i} className="h-[118px] rounded-2xl" />
             ))}
           </Grid>
         ) : error ? (
@@ -65,44 +59,54 @@ export function ReceiversPage() {
             }
           />
         ) : (
-          <Grid>
-            {shown.map((m) => (
-              <RecipientCard key={m.address} mailbox={m} />
-            ))}
-          </Grid>
+          <>
+            <h3 className="pb-3 text-[15px] text-muted-foreground">Everyone your app has emailed</h3>
+            <Grid>
+              {shown.map((m) => (
+                <RecipientCard key={m.address} mailbox={m} />
+              ))}
+            </Grid>
+          </>
         )}
       </div>
     </>
   )
 }
 
-function Grid({ children }: { children: React.ReactNode }) {
+function Grid({ children }: { children: ReactNode }) {
   return <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">{children}</div>
 }
 
+function lastReceived(iso: string | null): string | null {
+  if (!iso) return null
+  const day = dayLabel(iso)
+  return day === 'Today' ? rowTime(iso) : day
+}
+
 function RecipientCard({ mailbox: m }: { mailbox: Mailbox }) {
+  const last = lastReceived(m.lastReceivedAt)
   return (
     <Link
       to={`/receivers/${encodeURIComponent(m.address)}`}
-      className="group flex flex-col gap-4 rounded-xl border bg-card p-4 transition-colors hover:bg-muted/50 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+      className="group flex flex-col gap-4 rounded-2xl border bg-card p-4 transition-colors hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
     >
-      <div className="flex min-h-11 items-center gap-3">
-        <SenderAvatar name={m.displayName ?? ''} address={m.address} size="md" />
+      <div className="flex min-h-10 items-center gap-3">
+        <SenderAvatar name={m.displayName ?? ''} address={m.address} size="lg" />
         <div className="min-w-0 flex-1">
-          <p className="truncate text-[15px] font-medium">{m.displayName || m.address}</p>
-          {m.displayName && <p className="truncate text-sm text-muted-foreground">{m.address}</p>}
+          <p className="truncate text-[14px] font-semibold">{m.displayName || m.address}</p>
+          {m.displayName && <p className="truncate text-[13px] text-muted-foreground">{m.address}</p>}
         </div>
         {m.unread > 0 && (
-          <span className="shrink-0 rounded-full bg-brand/10 px-2 py-0.5 text-xs font-medium text-brand tabular-nums">
-            {count(m.unread)} new
+          <span className="min-w-6 shrink-0 rounded-md bg-brand px-1.5 text-center text-[12px] leading-[22px] font-semibold text-brand-foreground tabular-nums">
+            {count(m.unread)}
           </span>
         )}
       </div>
-      <div className="flex items-center justify-between text-sm text-muted-foreground">
+      <div className="flex items-center justify-between text-[13px] text-muted-foreground">
         <span className="tabular-nums">
           {count(m.total)} message{m.total === 1 ? '' : 's'}
         </span>
-        {m.lastReceivedAt && <span className="tabular-nums">{listTime(m.lastReceivedAt)}</span>}
+        {last && <span className="tabular-nums">{last}</span>}
       </div>
     </Link>
   )
@@ -116,8 +120,7 @@ export function ReceiverMailboxPage() {
   if (isLoading || error || !mailbox) {
     return (
       <>
-        <PageHeader icon={Users} title={address} />
-        <Toolbar />
+        <PageHeader title={address} back="/receivers" />
         {isLoading ? (
           <div className="flex-1" />
         ) : (
@@ -140,18 +143,9 @@ export function ReceiverMailboxPage() {
     <MailboxView
       mailbox={mailbox}
       basePath={`/receivers/${encodeURIComponent(mailbox.address)}`}
-      icon={Users}
       title={mailbox.displayName || mailbox.address}
-      listTitle={
-        <Link
-          to="/receivers"
-          className="-ml-1 flex min-w-0 items-center gap-1.5 rounded-md px-1 hover:text-foreground"
-          aria-label="Back to all recipients"
-        >
-          <ArrowLeft className="size-4 shrink-0 text-muted-foreground" />
-          <span className="truncate">{mailbox.address}</span>
-        </Link>
-      }
+      subtitle={mailbox.displayName ? mailbox.address : undefined}
+      back="/receivers"
     />
   )
 }

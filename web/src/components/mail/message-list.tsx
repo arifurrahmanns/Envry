@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Check, ListFilter, Loader2, Paperclip, RotateCw, Trash2 } from 'lucide-react'
+import { Download, Ellipsis, Funnel, Loader2, Mail, MailOpen, Paperclip, RotateCw, Trash2 } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 
 import { SenderAvatar } from '@/components/mail/sender-avatar'
 import { Button } from '@/components/ui/button'
-import { Checkbox } from '@/components/ui/checkbox'
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -13,20 +13,23 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { displayName, listTime, messageTime } from '@/lib/format'
+import { urls } from '@/lib/api'
+import { displayName, groupByDay, messageTime, rowTime } from '@/lib/format'
 import { isDelivery, type ListItem } from '@/lib/messages'
 import { cn } from '@/lib/utils'
 
 type MessageListProps = {
-  /** Header label, or a control such as an account switcher. */
-  title: ReactNode
-  banner?: ReactNode
-  /** "sent" shows recipients per row; "mailbox" shows the sender. */
+  /** Pill tabs on the left of the header (folders or views). */
+  tabs: ReactNode
+  /** DropdownMenuItems for the "…" menu. */
+  menu?: ReactNode
+  /** "sent" rows show the first recipient; "mailbox" rows track read state. */
   mode: 'sent' | 'mailbox'
   items: ListItem[]
   selectedId: string | null
   onSelect: (id: string) => void
-  onDelete?: (ids: string[]) => Promise<unknown>
+  onDelete?: (id: string) => void
+  onToggleSeen?: (id: string) => void
   isLoading: boolean
   error: Error | null
   onRetry: () => void
@@ -38,13 +41,14 @@ type MessageListProps = {
 }
 
 export function MessageList({
-  title,
-  banner,
+  tabs,
+  menu,
   mode,
   items,
   selectedId,
   onSelect,
   onDelete,
+  onToggleSeen,
   isLoading,
   error,
   onRetry,
@@ -56,23 +60,16 @@ export function MessageList({
 }: MessageListProps) {
   const [unreadOnly, setUnreadOnly] = useState(false)
   const [withAttachments, setWithAttachments] = useState(false)
-  const [checkedIds, setChecked] = useState<Set<string>>(new Set())
-  const [deleting, setDeleting] = useState(false)
+  const filtering = unreadOnly || withAttachments
 
   const visible = useMemo(
     () =>
       items.filter(
-        (m) =>
-          (!unreadOnly || (isDelivery(m) && !m.seen)) && (!withAttachments || m.attachmentCount > 0),
+        (m) => (!unreadOnly || (isDelivery(m) && !m.seen)) && (!withAttachments || m.attachmentCount > 0),
       ),
     [items, unreadOnly, withAttachments],
   )
-
-  // Only rows still on screen count as checked (others were deleted or filtered out).
-  const checked = useMemo(() => {
-    const ids = new Set(visible.map((m) => m.id))
-    return new Set([...checkedIds].filter((id) => ids.has(id)))
-  }, [checkedIds, visible])
+  const groups = useMemo(() => groupByDay(visible, messageTime), [visible])
 
   useListKeyboard(visible, selectedId, onSelect)
 
@@ -90,100 +87,57 @@ export function MessageList({
     return () => io.disconnect()
   }, [hasNextPage, isFetchingNextPage, fetchNextPage])
 
-  const allChecked = visible.length > 0 && checked.size === visible.length
-  const someChecked = checked.size > 0 && !allChecked
-  const filtering = unreadOnly || withAttachments
-
-  const toggle = (id: string) =>
-    setChecked(() => {
-      const next = new Set(checked)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-
-  const deleteChecked = async () => {
-    if (!onDelete) return
-    setDeleting(true)
-    try {
-      await onDelete([...checked])
-      setChecked(new Set())
-    } finally {
-      setDeleting(false)
-    }
-  }
-
   return (
-    <section
-      aria-label="Messages"
-      className={cn('flex min-h-0 flex-col overflow-hidden rounded-xl border bg-card', className)}
-    >
-      <div className="flex h-[52px] shrink-0 items-center gap-3 border-b px-4">
-        <Checkbox
-          aria-label={allChecked ? 'Clear selection' : 'Select all'}
-          checked={allChecked ? true : someChecked ? 'indeterminate' : false}
-          onCheckedChange={() => setChecked(allChecked ? new Set() : new Set(visible.map((m) => m.id)))}
-          disabled={visible.length === 0 || !onDelete}
-          className="size-[18px] rounded-[5px]"
-        />
-        {checked.size > 0 ? (
-          <>
-            <span className="text-[15px] tabular-nums">{checked.size} selected</span>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="ml-auto text-muted-foreground"
-              onClick={() => void deleteChecked()}
-              disabled={deleting}
-              aria-label="Delete selected"
-            >
-              {deleting ? <Loader2 className="animate-spin" /> : <Trash2 />}
-            </Button>
-          </>
-        ) : (
-          <>
-            <div className="min-w-0 flex-1 truncate text-[15px] text-foreground/85">{title}</div>
-            <DropdownMenu>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      className={cn('text-muted-foreground', filtering && 'bg-muted text-foreground')}
-                      aria-label="Filter"
-                    >
-                      <ListFilter className="size-[18px]" strokeWidth={1.75} />
-                    </Button>
-                  </DropdownMenuTrigger>
-                </TooltipTrigger>
-                <TooltipContent>Filter</TooltipContent>
-              </Tooltip>
-              <DropdownMenuContent align="end" className="w-48">
-                <DropdownMenuLabel className="text-xs text-muted-foreground">Show only</DropdownMenuLabel>
-                {mode === 'mailbox' && (
-                  <DropdownMenuCheckboxItem checked={unreadOnly} onCheckedChange={(v) => setUnreadOnly(v === true)}>
-                    Unread
-                  </DropdownMenuCheckboxItem>
-                )}
-                <DropdownMenuCheckboxItem
-                  checked={withAttachments}
-                  onCheckedChange={(v) => setWithAttachments(v === true)}
-                >
-                  With attachments
+    <section aria-label="Messages" className={cn('flex min-h-0 flex-col', className)}>
+      <div className="flex h-[76px] shrink-0 items-center gap-3 border-b px-5 md:px-7">
+        <nav aria-label="Folders" className="-my-2 flex min-w-0 items-center gap-1 overflow-x-auto py-2 [scrollbar-width:none]">
+          {tabs}
+        </nav>
+        <div className="ml-auto flex shrink-0 items-center gap-2">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                aria-label="Filter"
+                className={cn('h-9 gap-2 rounded-[10px] px-3 font-normal shadow-none', filtering && 'bg-muted')}
+              >
+                <Funnel className="size-4" strokeWidth={1.75} />
+                <span className="hidden sm:inline">Filter</span>
+                {filtering && <span className="size-1.5 rounded-full bg-brand" />}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuLabel className="text-xs text-muted-foreground">Show only</DropdownMenuLabel>
+              {mode === 'mailbox' && (
+                <DropdownMenuCheckboxItem checked={unreadOnly} onCheckedChange={(v) => setUnreadOnly(v === true)}>
+                  Unread
                 </DropdownMenuCheckboxItem>
+              )}
+              <DropdownMenuCheckboxItem checked={withAttachments} onCheckedChange={(v) => setWithAttachments(v === true)}>
+                With attachments
+              </DropdownMenuCheckboxItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          {menu && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" className="h-9 w-10 rounded-[10px] px-0 shadow-none" aria-label="More actions">
+                  <Ellipsis className="size-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                {menu}
               </DropdownMenuContent>
             </DropdownMenu>
-          </>
-        )}
+          )}
+        </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-        {banner}
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-4">
         {isLoading ? (
           <ListSkeleton />
         ) : error ? (
-          <div className="flex flex-col items-center gap-3 px-6 py-12 text-center">
+          <div className="flex flex-col items-center gap-3 px-6 py-16 text-center">
             <p className="text-sm text-muted-foreground">Couldn't load messages: {error.message}</p>
             <Button variant="outline" size="sm" onClick={onRetry}>
               <RotateCw />
@@ -192,25 +146,29 @@ export function MessageList({
           </div>
         ) : visible.length === 0 ? (
           filtering && items.length > 0 ? (
-            <p className="px-6 py-12 text-center text-sm text-muted-foreground">No messages match this filter.</p>
+            <p className="px-6 py-16 text-center text-sm text-muted-foreground">No messages match this filter.</p>
           ) : (
             empty
           )
         ) : (
-          <ul role="listbox" aria-label="Messages" className="divide-y">
-            {visible.map((m) => (
-              <MessageRow
-                key={m.id}
-                item={m}
-                mode={mode}
-                selected={m.id === selectedId}
-                checked={checked.has(m.id)}
-                selecting={checked.size > 0}
-                onSelect={() => onSelect(m.id)}
-                onToggle={onDelete ? () => toggle(m.id) : undefined}
-              />
-            ))}
-          </ul>
+          groups.map((g) => (
+            <section key={g.label} aria-label={g.label}>
+              <h3 className="px-5 pt-6 pb-2 text-[15px] text-muted-foreground md:px-7">{g.label}</h3>
+              <ul role="listbox" aria-label={g.label}>
+                {g.items.map((m) => (
+                  <MessageRow
+                    key={m.id}
+                    item={m}
+                    mode={mode}
+                    selected={m.id === selectedId}
+                    onSelect={() => onSelect(m.id)}
+                    onDelete={onDelete ? () => onDelete(m.id) : undefined}
+                    onToggleSeen={onToggleSeen ? () => onToggleSeen(m.id) : undefined}
+                  />
+                ))}
+              </ul>
+            </section>
+          ))
         )}
         <div ref={sentinel} />
         {isFetchingNextPage && (
@@ -227,114 +185,127 @@ function MessageRow({
   item,
   mode,
   selected,
-  checked,
-  selecting,
   onSelect,
-  onToggle,
+  onDelete,
+  onToggleSeen,
 }: {
   item: ListItem
   mode: 'sent' | 'mailbox'
   selected: boolean
-  checked: boolean
-  selecting: boolean
   onSelect: () => void
-  onToggle?: () => void
+  onDelete?: () => void
+  onToggleSeen?: () => void
 }) {
-  const unread = isDelivery(item) && !item.seen
+  const delivery = isDelivery(item) ? item : null
+  const unread = delivery !== null && !delivery.seen
   const recipients = [...item.to, ...item.cc]
-  const name = displayName(item.from)
-  const secondLine =
-    mode === 'sent'
-      ? recipients.length === 0
-        ? 'Undisclosed recipients'
-        : `To ${recipients[0].address}${recipients.length > 1 ? ` +${recipients.length - 1}` : ''}`
-      : item.from.address
+  const name =
+    mode === 'sent' && recipients.length > 0
+      ? `${displayName(item.from)} → ${displayName(recipients[0])}${recipients.length > 1 ? ` +${recipients.length - 1}` : ''}`
+      : displayName(item.from)
 
   return (
     <li
       role="option"
       aria-selected={selected}
       data-message-id={item.id}
-      className={cn(
-        'group relative flex cursor-pointer gap-3 px-4 py-4 transition-colors hover:bg-muted/50',
-        selected && 'bg-muted hover:bg-muted',
-      )}
       onClick={onSelect}
+      className={cn(
+        'group relative flex cursor-pointer items-center gap-3.5 px-5 py-2.5 transition-colors hover:bg-accent md:px-7',
+        selected && 'bg-accent',
+      )}
     >
-      <div className="relative mt-0.5 size-7 shrink-0">
-        <SenderAvatar
-          name={item.from.name}
-          address={item.from.address}
-          className={cn(onToggle && (checked || selecting ? 'invisible' : 'group-hover:invisible'))}
-        />
-        {onToggle && (
-          <button
-            type="button"
-            role="checkbox"
-            aria-checked={checked}
-            aria-label={`Select message from ${name}`}
-            onClick={(e) => {
-              e.stopPropagation()
-              onToggle()
-            }}
-            className={cn(
-              'absolute inset-0 flex items-center justify-center rounded-full border bg-background text-primary-foreground',
-              checked ? 'border-primary bg-primary' : 'invisible group-hover:visible',
-              selecting && 'visible',
-            )}
-          >
-            {checked && <Check className="size-3.5" strokeWidth={3} />}
-          </button>
-        )}
-      </div>
-
+      <SenderAvatar name={item.from.name} address={item.from.address} size="md" />
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-1.5">
-          <span className={cn('truncate text-[15px]', unread ? 'font-semibold' : 'font-medium')}>{name}</span>
+        <div className="flex h-6 items-center gap-2">
+          <span className="truncate text-[14px] font-semibold">{name}</span>
           {item.attachmentCount > 0 && (
             <Paperclip className="size-3.5 shrink-0 text-muted-foreground" aria-label="Has attachments" />
           )}
-          {isDelivery(item) && item.rcptType === 'bcc' && (
+          {delivery?.rcptType === 'bcc' && (
             <span className="shrink-0 rounded border px-1 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
               Bcc
             </span>
           )}
-          <span
-            className={cn(
-              'ml-auto shrink-0 pl-2 text-[13px] tabular-nums',
-              unread || selected ? 'text-foreground' : 'text-muted-foreground',
-            )}
-          >
-            {listTime(messageTime(item))}
+          <span className="ml-auto flex shrink-0 items-center gap-2 pl-2">
+            <span className={cn('text-[13px] text-muted-foreground tabular-nums', 'group-hover:hidden')}>
+              {rowTime(messageTime(item))}
+            </span>
+            {unread && <span aria-label="Unread" className="size-2 rounded-full bg-brand group-hover:hidden" />}
+            <span className="hidden items-center gap-0.5 group-hover:flex">
+              {onToggleSeen && (
+                <RowAction
+                  icon={unread ? MailOpen : Mail}
+                  label={unread ? 'Mark as read' : 'Mark as unread'}
+                  onClick={onToggleSeen}
+                />
+              )}
+              {mode === 'sent' && <RowAction icon={Download} label="Download .eml" href={urls.raw(item.id, true)} />}
+              {onDelete && <RowAction icon={Trash2} label="Delete" onClick={onDelete} />}
+            </span>
           </span>
         </div>
-        <div className="truncate text-sm text-muted-foreground">{secondLine}</div>
-        <p className="mt-2 line-clamp-2 text-sm leading-relaxed text-muted-foreground">
-          <span className={cn('text-foreground/85', unread && 'font-medium text-foreground')}>
-            {item.subject || '(no subject)'}
-          </span>
+        <p className="truncate text-[14px] text-foreground/75">
+          <span className="font-semibold text-foreground">{item.subject || '(no subject)'}</span>
           {item.preview && <> — {item.preview}</>}
         </p>
       </div>
-      {unread && <span aria-label="Unread" className="absolute top-[22px] left-1.5 size-1.5 rounded-full bg-brand" />}
     </li>
+  )
+}
+
+function RowAction({
+  icon: Icon,
+  label,
+  onClick,
+  href,
+}: {
+  icon: LucideIcon
+  label: string
+  onClick?: () => void
+  href?: string
+}) {
+  const className =
+    'flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground'
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        {href ? (
+          <a href={href} download aria-label={label} className={className} onClick={(e) => e.stopPropagation()}>
+            <Icon className="size-[17px]" strokeWidth={1.75} />
+          </a>
+        ) : (
+          <button
+            type="button"
+            aria-label={label}
+            className={className}
+            onClick={(e) => {
+              e.stopPropagation()
+              onClick?.()
+            }}
+          >
+            <Icon className="size-[17px]" strokeWidth={1.75} />
+          </button>
+        )}
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
   )
 }
 
 function ListSkeleton() {
   return (
-    <div className="divide-y" aria-busy="true" aria-label="Loading messages">
-      {Array.from({ length: 6 }, (_, i) => (
-        <div key={i} className="flex gap-3 px-4 py-4">
-          <Skeleton className="size-7 rounded-full" />
+    <div aria-busy="true" aria-label="Loading messages">
+      <Skeleton className="mx-5 mt-7 mb-3 h-4 w-16 md:mx-7" />
+      {Array.from({ length: 7 }, (_, i) => (
+        <div key={i} className="flex items-center gap-3.5 px-5 py-3 md:px-7">
+          <Skeleton className="size-9 rounded-full" />
           <div className="flex-1 space-y-2">
             <div className="flex justify-between gap-4">
               <Skeleton className="h-4 w-32" />
-              <Skeleton className="h-3 w-10" />
+              <Skeleton className="h-3 w-12" />
             </div>
-            <Skeleton className="h-3 w-44" />
-            <Skeleton className="h-3 w-full" />
-            <Skeleton className="h-3 w-3/4" />
+            <Skeleton className="h-3.5 w-11/12" />
           </div>
         </div>
       ))}

@@ -11,6 +11,7 @@ export type ShellContextValue = {
   live: LiveStatus
   openCompose: (draft?: ComposeDraft) => void
   openConnect: () => void
+  openCreateAccount: () => void
 }
 
 export const ShellContext = createContext<ShellContextValue | null>(null)
