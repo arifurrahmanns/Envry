@@ -14,6 +14,8 @@ export function ConnectDialog({ open, onOpenChange }: { open: boolean; onOpenCha
   const ports = data?.ports ?? { smtp: 1025, pop3: 1110, imap: 1143, http: 8025, smtps: 0, pop3s: 0, imaps: 0 }
   const tls = data?.tls
   const chaos = failureSimulation(data?.settings)
+  const strict = data?.settings.strictAuth ?? false
+  const creds = credentials(strict)
   const [lang, setLang] = useState<keyof typeof snippets>('node')
 
   const servers = [
@@ -35,9 +37,17 @@ export function ConnectDialog({ open, onOpenChange }: { open: boolean; onOpenCha
         <DialogHeader>
           <DialogTitle>Connection settings</DialogTitle>
           <DialogDescription>
-            SMTP accepts any username and password. For POP3 and IMAP, log in with a mailbox address
-            such as <span className="font-mono text-foreground/80">dev@test.local</span>; any password
-            works unless strict auth is on.{' '}
+            {strict ? (
+              <>
+                Strict auth is on: SMTP, POP3 and IMAP need a test account&apos;s address and password.{' '}
+              </>
+            ) : (
+              <>
+                Envry accepts any username and password, so if your app requires them, fill in anything.
+                For POP3 and IMAP, log in with a mailbox address such as{' '}
+                <span className="font-mono text-foreground/80">dev@test.local</span>.{' '}
+              </>
+            )}
             {tls?.enabled
               ? 'TLS is on: use STARTTLS on the standard ports or the implicit-TLS ports below.'
               : 'No TLS is needed for local testing; start Envry with --tls to enable it.'}
@@ -108,9 +118,9 @@ export function ConnectDialog({ open, onOpenChange }: { open: boolean; onOpenCha
           </div>
           <div className="relative rounded-xl border bg-muted/40">
             <pre className="overflow-x-auto p-4 pr-12 font-mono text-[13px] leading-relaxed">
-              {snippets[lang].code(host, ports.smtp)}
+              {snippets[lang].code(host, ports.smtp, creds)}
             </pre>
-            <CopyButton value={snippets[lang].code(host, ports.smtp)} className="absolute top-2 right-2" />
+            <CopyButton value={snippets[lang].code(host, ports.smtp, creds)} className="absolute top-2 right-2" />
           </div>
         </div>
       </DialogContent>
@@ -133,15 +143,26 @@ function failureSimulation(settings?: Info['settings']): string[] {
   return lines
 }
 
+/** Sample SMTP credentials for the snippets. */
+type Credentials = { user: string; pass: string; note: string }
+
+function credentials(strictAuth: boolean): Credentials {
+  return strictAuth
+    ? { user: 'dev@test.local', pass: 'account-password', note: "Strict auth: a test account's address and password" }
+    : { user: 'envry', pass: 'envry', note: 'Envry accepts any username and password' }
+}
+
 const snippets = {
   node: {
     label: 'Node.js',
-    code: (host: string, port: number) => `import nodemailer from 'nodemailer'
+    code: (host: string, port: number, c: Credentials) => `import nodemailer from 'nodemailer'
 
 const transport = nodemailer.createTransport({
   host: '${host}',
   port: ${port},
   secure: false,
+  // ${c.note}
+  auth: { user: '${c.user}', pass: '${c.pass}' },
 })
 
 await transport.sendMail({
@@ -153,16 +174,17 @@ await transport.sendMail({
   },
   laravel: {
     label: 'Laravel',
-    code: (host: string, port: number) => `MAIL_MAILER=smtp
+    code: (host: string, port: number, c: Credentials) => `MAIL_MAILER=smtp
 MAIL_HOST=${host}
 MAIL_PORT=${port}
-MAIL_USERNAME=null
-MAIL_PASSWORD=null
+# ${c.note}
+MAIL_USERNAME=${c.user}
+MAIL_PASSWORD=${c.pass}
 MAIL_ENCRYPTION=null`,
   },
   python: {
     label: 'Python',
-    code: (host: string, port: number) => `import smtplib
+    code: (host: string, port: number, c: Credentials) => `import smtplib
 from email.message import EmailMessage
 
 msg = EmailMessage()
@@ -172,13 +194,18 @@ msg["Subject"] = "Hello from Python"
 msg.set_content("It works!")
 
 with smtplib.SMTP("${host}", ${port}) as smtp:
+    # ${c.note}
+    smtp.login("${c.user}", "${c.pass}")
     smtp.send_message(msg)`,
   },
   django: {
     label: 'Django',
-    code: (host: string, port: number) => `EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+    code: (host: string, port: number, c: Credentials) => `EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
 EMAIL_HOST = "${host}"
 EMAIL_PORT = ${port}
+# ${c.note}
+EMAIL_HOST_USER = "${c.user}"
+EMAIL_HOST_PASSWORD = "${c.pass}"
 EMAIL_USE_TLS = False`,
   },
 }
