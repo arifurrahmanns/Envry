@@ -224,12 +224,16 @@ func newSession(s *Server, conn net.Conn) *session {
 	}
 }
 
+// release gives up the session's maildrop lock, if it holds one.
+func (ss *session) release() {
+	if ss.mailbox != "" {
+		ss.s.unlock(ss.mailbox)
+		ss.mailbox = ""
+	}
+}
+
 func (ss *session) serve() {
-	defer func() {
-		if ss.mailbox != "" {
-			ss.s.unlock(ss.mailbox)
-		}
-	}()
+	defer ss.release()
 	ss.ok("Envry POP3 server ready " + ss.banner)
 	for {
 		if err := ss.w.Flush(); err != nil {
@@ -598,7 +602,9 @@ func (ss *session) cmdTop(arg string) {
 }
 
 // quit ends the session; in the TRANSACTION state it first removes the
-// messages marked with DELE (the UPDATE state).
+// messages marked with DELE (the UPDATE state). The maildrop is unlocked
+// before the reply is sent, so a client that reconnects as soon as it reads
+// it finds the maildrop free.
 func (ss *session) quit() {
 	if ss.state != stateTransaction {
 		ss.ok("Envry POP3 server signing off")
@@ -610,9 +616,11 @@ func (ss *session) quit() {
 			ids = append(ids, m.DeliveryID)
 		}
 	}
+	mailbox := ss.mailbox
 	n, err := ss.s.store.DeleteDeliveries(context.Background(), ids)
+	ss.release()
 	if err != nil {
-		ss.s.log.Error("pop3 delete failed", "mailbox", ss.mailbox, "err", err)
+		ss.s.log.Error("pop3 delete failed", "mailbox", mailbox, "err", err)
 		ss.err("some deleted messages not removed")
 		return
 	}

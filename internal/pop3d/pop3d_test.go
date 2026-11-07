@@ -322,6 +322,22 @@ func TestMaildropLock(t *testing.T) {
 	}
 }
 
+// A client that reconnects as soon as it reads the QUIT reply must find the
+// maildrop unlocked; polling clients do exactly this.
+func TestQuitReleasesLockBeforeReply(t *testing.T) {
+	_, addr := start(t, Options{})
+	for i := range 200 {
+		c := dial(t, addr)
+		c.cmd("USER dev@test.local")
+		if r := c.cmd("PASS x"); !strings.HasPrefix(r, "+OK") {
+			t.Fatalf("login %d right after the previous QUIT: %q", i, r)
+		}
+		if r := c.cmd("QUIT"); !strings.HasPrefix(r, "+OK") {
+			t.Fatalf("QUIT %d: %q", i, r)
+		}
+	}
+}
+
 func TestStrictAuth(t *testing.T) {
 	st, addr := start(t, Options{StrictAuth: true})
 	ctx := context.Background()
