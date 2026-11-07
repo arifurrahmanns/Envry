@@ -75,11 +75,9 @@ homebrew_casks:
     hooks:
       post:
         # The binary is not notarized; clear the quarantine flag so macOS runs it.
-        install: |
-          if OS.mac?
-            if system_command("/usr/bin/xattr", args: ["-h"]).exit_status == 0
-              system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/envry"]
-            end
+        install_steps: |
+          on_macos do
+            run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ .StagedPath }}/envry"], must_succeed: false
           end
 
 scoops:
