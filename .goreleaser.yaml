@@ -1,0 +1,94 @@
+# GoReleaser configuration: https://goreleaser.com
+#
+# A tag push (v*) runs this from .github/workflows/release.yml. To build all
+# archives locally without publishing: goreleaser release --snapshot --clean
+version: 2
+
+project_name: envry
+
+before:
+  hooks:
+    - npm --prefix web ci
+    - npm --prefix web run build
+
+builds:
+  - id: envry
+    main: ./cmd/envry
+    binary: envry
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X github.com/arifurrahmanns/envry/internal/version.Version=v{{ .Version }}
+      - -X github.com/arifurrahmanns/envry/internal/version.Commit={{ .ShortCommit }}
+      - -X github.com/arifurrahmanns/envry/internal/version.Date={{ .CommitDate }}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+
+archives:
+  - id: envry
+    # Version-free names keep releases/latest/download/<name> URLs stable
+    # for install.sh and CI scripts.
+    name_template: "{{ .ProjectName }}-{{ .Os }}-{{ .Arch }}"
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: checksums.txt
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^Merge "
+
+release:
+  github:
+    owner: arifurrahmanns
+    name: envry
+  prerelease: auto
+
+# The tap and bucket live in their own repositories. Publishing to them needs
+# a token with write access to both (the TAP_GITHUB_TOKEN secret); without it
+# these steps are skipped and the GitHub release is still published.
+homebrew_casks:
+  - name: envry
+    repository:
+      owner: arifurrahmanns
+      name: homebrew-tap
+      token: '{{ index .Env "TAP_GITHUB_TOKEN" }}'
+    directory: Casks
+    homepage: https://github.com/arifurrahmanns/envry
+    description: Local email testing server with SMTP capture, POP3, IMAP and a web UI
+    skip_upload: '{{ if index .Env "TAP_GITHUB_TOKEN" }}auto{{ else }}true{{ end }}'
+    hooks:
+      post:
+        # The binary is not notarized; clear the quarantine flag so macOS runs it.
+        install: |
+          if OS.mac?
+            if system_command("/usr/bin/xattr", args: ["-h"]).exit_status == 0
+              system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/envry"]
+            end
+          end
+
+scoops:
+  - name: envry
+    repository:
+      owner: arifurrahmanns
+      name: scoop-bucket
+      token: '{{ index .Env "TAP_GITHUB_TOKEN" }}'
+    homepage: https://github.com/arifurrahmanns/envry
+    description: Local email testing server with SMTP capture, POP3, IMAP and a web UI
+    license: MIT
+    skip_upload: '{{ if index .Env "TAP_GITHUB_TOKEN" }}auto{{ else }}true{{ end }}'

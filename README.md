@@ -2,7 +2,9 @@
 
 Envry is a local email testing server. It captures every email your application sends over SMTP, gives each recipient a mailbox, and serves those mailboxes back over POP3, IMAP, a REST API and a web UI. Nothing is ever relayed to the internet.
 
-> **Status:** early development. SMTP capture, POP3, IMAP (all with optional TLS), the web UI, the REST API, message checks and failure simulation work today.
+![Envry's Sent view with an HTML email open in the reader](docs/images/sent.png)
+
+> **Status:** early development; expect breaking changes before 1.0. SMTP capture, POP3, IMAP (all with optional TLS), the web UI, the REST API, message checks and failure simulation work today.
 
 ## Features
 
@@ -16,13 +18,39 @@ Envry is a local email testing server. It captures every email your application 
 - **`envry send`** to fire a test email from the command line.
 - **One binary** with the UI embedded; no external services.
 
-## Quick start
+![Receivers view: one card per recipient with unread counts](docs/images/receivers.png)
 
-Build from source (requires Go 1.25+, Node.js 20+ and GNU Make):
+## Installation
+
+**macOS and Linux**
 
 ```bash
-make build
-./bin/envry
+curl -sSfL https://raw.githubusercontent.com/arifurrahmanns/envry/main/install.sh | sh
+```
+
+The script downloads the latest release for your system, verifies its checksum and installs `envry` to `/usr/local/bin`. Set `ENVRY_INSTALL_DIR` to install elsewhere, or `ENVRY_VERSION` (for example `v0.1.0`) to pin a release.
+
+**Homebrew (macOS)**
+
+```bash
+brew install arifurrahmanns/tap/envry
+```
+
+**Scoop (Windows)**
+
+```bash
+scoop bucket add envry https://github.com/arifurrahmanns/scoop-bucket
+scoop install envry
+```
+
+**Manual download**: archives for Linux, macOS and Windows on amd64 and arm64 are on the [releases page](https://github.com/arifurrahmanns/envry/releases). Each contains a single `envry` binary.
+
+**From source** (requires Go 1.25+, Node.js 20+ and GNU Make): run `make build`; the binary is written to `bin/envry`.
+
+## Quick start
+
+```bash
+envry
 ```
 
 Then open <http://localhost:8025> and point your application at `localhost:1025`.
@@ -70,7 +98,8 @@ Log in to the POP3 port with a mailbox address as the username, for example `dev
 
 ```bash
 envry send --to dev@test.local --subject "Hello"
-envry send --to dev@test.local --cc qa@test.local --bcc audit@test.local   --html "<h1>Welcome</h1>" --text "Welcome" --attach invoice.pdf
+envry send --to dev@test.local --cc qa@test.local --bcc audit@test.local \
+  --html "<h1>Welcome</h1>" --text "Welcome" --attach invoice.pdf
 ```
 
 It uses the `--smtp` address (or `ENVRY_SMTP`), so it finds a server started with the same settings. With `--user` and `--password` it signs in with SMTP AUTH; when the user is an account, a copy is also filed in its Sent folder.
@@ -123,6 +152,36 @@ curl "http://localhost:8025/api/v1/wait?to=user@test.local&subject=Reset&timeout
 | `timeout` | How long to wait, e.g. `10s` (default 10s, max 5m); `408` when it expires |
 
 A message that already arrived matches immediately, so the test does not race the sender. The response is the full message, including headers, the text body, recipients and attachments.
+
+For example, in a JavaScript test:
+
+```js
+const since = new Date().toISOString()
+await requestPasswordReset('user@test.local') // your app sends the email
+
+const res = await fetch(
+  `http://localhost:8025/api/v1/wait?to=user@test.local&subject=Reset&since=${since}&timeout=10s`,
+)
+const email = await res.json()
+expect(email.text).toContain('/reset?token=')
+```
+
+### In CI
+
+Envry starts in milliseconds and needs no services, so CI jobs can run it next to the tests. In GitHub Actions:
+
+```yaml
+- name: Start Envry
+  run: |
+    curl -sSfL https://raw.githubusercontent.com/arifurrahmanns/envry/main/install.sh | sh
+    nohup envry --db :memory: > envry.log 2>&1 &
+    curl -sf --retry 20 --retry-connrefused --retry-delay 1 http://localhost:8025/api/v1/info > /dev/null
+
+- name: Test
+  run: npm test # the app sends mail to localhost:1025
+```
+
+`--db :memory:` keeps every run clean. Add `--smtp-reject-rcpt` or `--smtp-latency` to test how the app handles delivery failures.
 
 ## REST API
 
@@ -190,9 +249,21 @@ Run `envry --help` for the full list of commands and flags.
 
 On Windows, run the same targets with `mingw32-make` or any GNU Make 4.x.
 
+### Releasing
+
+Releases are built by [GoReleaser](https://goreleaser.com) from a version tag:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+The Release workflow runs the tests, then publishes the archives and `checksums.txt` to GitHub Releases. When the `TAP_GITHUB_TOKEN` secret is set (a token with write access to the `homebrew-tap` and `scoop-bucket` repositories), it also updates the Homebrew cask and the Scoop manifest. CI builds every archive from the same configuration on each push, without publishing, so release problems show up before tagging.
+
 ### Project layout
 
 ```
+.github/workflows/  CI (tests, lint, release dry run) and the tag-triggered release
 cmd/envry/          CLI entry point (serve, send, version)
 internal/
   api/              REST API, /wait long-poll and /ws event stream
@@ -210,6 +281,9 @@ internal/
   version/          Build metadata
   webui/            Embedded web UI with SPA fallback
 web/                React + TypeScript + Tailwind CSS + shadcn/ui
+docs/images/        Screenshots used in this README
+install.sh          Installer for Linux and macOS releases
+.goreleaser.yaml    Release builds, archives, Homebrew cask and Scoop manifest
 ```
 
 ## License
