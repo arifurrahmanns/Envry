@@ -46,6 +46,20 @@ type App struct {
 	endpoints  []*endpoint
 }
 
+// ListenError reports an endpoint whose address could not be bound, for
+// example because another program already uses the port.
+type ListenError struct {
+	Service string // smtp, pop3, imap, smtps, pop3s, imaps or http
+	Addr    string
+	Err     error
+}
+
+func (e *ListenError) Error() string {
+	return fmt.Sprintf("listen %s %s: %v", e.Service, e.Addr, e.Err)
+}
+
+func (e *ListenError) Unwrap() error { return e.Err }
+
 // endpoint is one listening socket and the server behind it.
 type endpoint struct {
 	name  string
@@ -194,7 +208,7 @@ func (a *App) Listen() error {
 				prev.ln.Close()
 				prev.ln = nil
 			}
-			return fmt.Errorf("listen %s %s: %w", e.name, e.addr, err)
+			return &ListenError{Service: e.name, Addr: e.addr, Err: err}
 		}
 		if e.tls {
 			ln = tls.NewListener(ln, a.tls.Config)

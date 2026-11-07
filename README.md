@@ -30,6 +30,14 @@ curl -sSfL https://raw.githubusercontent.com/arifurrahmanns/envry/main/install.s
 
 The script downloads the latest release for your system, verifies its checksum and installs `envry` to `/usr/local/bin`. Set `ENVRY_INSTALL_DIR` to install elsewhere, or `ENVRY_VERSION` (for example `v0.1.0`) to pin a release.
 
+**Windows** (PowerShell)
+
+```powershell
+irm https://raw.githubusercontent.com/arifurrahmanns/envry/main/install.ps1 | iex
+```
+
+The script verifies the download, installs `envry.exe` to `%LOCALAPPDATA%\Programs\Envry`, adds that folder to your PATH and adds **Envry** to the Start menu. It needs no administrator rights; run it again to upgrade. `ENVRY_VERSION` and `ENVRY_INSTALL_DIR` work as above, and `ENVRY_NO_MODIFY_PATH=1` leaves PATH and the Start menu untouched. To uninstall, delete that folder and the Start-menu shortcut, and remove the folder from your user PATH under *Settings › System › About › Advanced system settings › Environment Variables*.
+
 **Homebrew (macOS)**
 
 ```bash
@@ -54,6 +62,8 @@ envry
 ```
 
 Then open <http://localhost:8025> and point your application at `localhost:1025`.
+
+On Windows you can also start Envry from the Start menu or by double-clicking `envry.exe`. It runs in its own window, lists its addresses and opens the web UI in your browser; close the window to stop it. If a port is taken, for example by Mailpit, which uses the same defaults, the window stays open and says which one.
 
 | Service | Default port |
 | --- | --- |
@@ -283,6 +293,7 @@ internal/
 web/                React + TypeScript + Tailwind CSS + shadcn/ui
 docs/images/        Screenshots used in this README
 install.sh          Installer for Linux and macOS releases
+install.ps1         Installer for Windows releases
 .goreleaser.yaml    Release builds, archives, Homebrew cask and Scoop manifest
 ```
 

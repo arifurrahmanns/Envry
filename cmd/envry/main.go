@@ -3,9 +3,11 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -20,10 +22,20 @@ import (
 )
 
 func main() {
-	if err := newRootCmd().Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, "envry:", err)
-		os.Exit(1)
+	err := newRootCmd().Execute()
+	if err == nil {
+		return
 	}
+	fmt.Fprintln(os.Stderr, "envry:", err)
+	if h := hint(err); h != "" {
+		fmt.Fprintln(os.Stderr, h)
+	}
+	if ownsConsole() {
+		// Started by double-click: keep the window open so the error can be read.
+		fmt.Fprint(os.Stderr, "\nPress Enter to close this window.")
+		_, _ = bufio.NewReader(os.Stdin).ReadString('\n')
+	}
+	os.Exit(1)
 }
 
 func newRootCmd() *cobra.Command {
@@ -72,10 +84,43 @@ func runServe(cmd *cobra.Command, flags *config.Flags) error {
 	if err != nil {
 		return err
 	}
-	if err := a.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
+	if err := a.Listen(); err != nil {
+		a.Store().Close()
+		return err
+	}
+	if ownsConsole() {
+		// Started by double-click: say what is running and open the web UI,
+		// since the user has no terminal command to go by.
+		welcome(cmd.OutOrStdout(), a.Addrs())
+		if err := openBrowser("http://" + localAddr(a.Addrs().HTTP)); err != nil {
+			log.Warn("could not open the browser", "err", err)
+		}
+	}
+	if err := a.Serve(ctx); err != nil && !errors.Is(err, context.Canceled) {
 		return err
 	}
 	return nil
+}
+
+// welcome lists where everything is, for users who start envry.exe from
+// Explorer or the Start menu rather than a terminal.
+func welcome(w io.Writer, addrs app.Addrs) {
+	fmt.Fprintf(w, "\nEnvry %s is running.\n\n", version.Version)
+	rows := [][2]string{
+		{"Web UI", "http://" + localAddr(addrs.HTTP)},
+		{"SMTP", localAddr(addrs.SMTP) + "   send your app's mail here"},
+		{"POP3", localAddr(addrs.POP3)},
+		{"IMAP", localAddr(addrs.IMAP)},
+	}
+	for _, tls := range [][2]string{{"SMTPS", addrs.SMTPS}, {"POP3S", addrs.POP3S}, {"IMAPS", addrs.IMAPS}} {
+		if tls[1] != "" {
+			rows = append(rows, [2]string{tls[0], localAddr(tls[1])})
+		}
+	}
+	for _, r := range rows {
+		fmt.Fprintf(w, "  %-7s %s\n", r[0], r[1])
+	}
+	fmt.Fprint(w, "\nClose this window or press Ctrl+C to stop Envry.\n\n")
 }
 
 func newVersionCmd() *cobra.Command {

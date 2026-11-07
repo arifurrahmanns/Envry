@@ -133,13 +133,19 @@ func deliver(addr, from string, rcpts []string, raw []byte, user, password strin
 }
 
 // dialAddr turns a wildcard listen address into one a client can dial.
-func dialAddr(listen string) string {
-	host, port, err := net.SplitHostPort(listen)
+func dialAddr(listen string) string { return replaceWildcard(listen, "127.0.0.1") }
+
+// localAddr turns a wildcard listen address into one to show people.
+func localAddr(listen string) string { return replaceWildcard(listen, "localhost") }
+
+// replaceWildcard swaps an empty or unspecified host (0.0.0.0, ::) for host.
+func replaceWildcard(listen, host string) string {
+	h, port, err := net.SplitHostPort(listen)
 	if err != nil {
 		return listen
 	}
-	if ip := net.ParseIP(host); host == "" || (ip != nil && ip.IsUnspecified()) {
-		host = "127.0.0.1"
+	if ip := net.ParseIP(h); h != "" && (ip == nil || !ip.IsUnspecified()) {
+		host = h
 	}
 	return net.JoinHostPort(host, port)
 }
