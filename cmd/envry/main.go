@@ -39,6 +39,12 @@ func main() {
 }
 
 func newRootCmd() *cobra.Command {
+	// By default Cobra refuses to run when started from Explorer, printing
+	// "This is a command line tool" and exiting after 5 seconds. Envry is
+	// meant to be double-clicked and started from the Start menu, so turn
+	// that off; runServe handles those launches itself.
+	cobra.MousetrapHelpText = ""
+
 	root := &cobra.Command{
 		Use:   "envry",
 		Short: "Local email testing server: SMTP capture, POP3, IMAP and a web UI",

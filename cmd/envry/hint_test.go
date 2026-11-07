@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spf13/cobra"
+
 	"github.com/arifurrahmanns/envry/internal/app"
 	"github.com/arifurrahmanns/envry/internal/config"
 )
@@ -67,6 +69,16 @@ func TestWelcome(t *testing.T) {
 	}
 	if strings.Contains(out, "SMTPS") {
 		t.Errorf("TLS rows shown without TLS:\n%s", out)
+	}
+}
+
+// Cobra exits with "This is a command line tool" when a program is started
+// from Explorer unless its mousetrap text is cleared; double-click and the
+// Start-menu shortcut depend on it being off.
+func TestStartsFromExplorer(t *testing.T) {
+	newRootCmd()
+	if cobra.MousetrapHelpText != "" {
+		t.Errorf("cobra.MousetrapHelpText = %q; Envry would refuse to start from Explorer", cobra.MousetrapHelpText)
 	}
 }
 
