@@ -5,6 +5,8 @@ import { AppShell } from '@/components/layout/app-shell'
 import { PageHeader } from '@/components/layout/page-header'
 import { EmptyState } from '@/components/mail/empty-state'
 import { Button } from '@/components/ui/button'
+import { ComposePage } from '@/features/compose/compose-page'
+import { ConnectionPage } from '@/features/connect/connection-page'
 import { AccountMailboxPage, InboxPage } from '@/features/inbox/inbox-page'
 import { ReceiverMailboxPage, ReceiversPage } from '@/features/receivers/receivers-page'
 import { SentPage } from '@/features/sent/sent-page'
@@ -19,6 +21,8 @@ export default function App() {
         <Route path="receivers/:address" element={<ReceiverMailboxPage />} />
         <Route path="inbox" element={<InboxPage />} />
         <Route path="inbox/:account" element={<AccountMailboxPage />} />
+        <Route path="compose" element={<ComposePage />} />
+        <Route path="connection" element={<ConnectionPage />} />
         <Route path="message/:id" element={<MessageRedirect />} />
         <Route path="*" element={<NotFound />} />
       </Route>

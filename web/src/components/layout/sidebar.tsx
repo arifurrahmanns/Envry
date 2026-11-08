@@ -15,9 +15,13 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { dragRegion, inDesktopApp, isMac } from '@/lib/desktop'
 import { count } from '@/lib/format'
 import { useMailboxes } from '@/lib/queries'
 import { cn } from '@/lib/utils'
+
+/** The desktop app's compact header (52px) leaves less room above the logo. */
+const compactTop = inDesktopApp && !isMac
 
 type SidebarProps = {
   collapsed?: boolean
@@ -28,33 +32,41 @@ type SidebarProps = {
   marker?: boolean
 }
 
+/** The sidebar on wider screens; it fills its resizable pane (see AppShell). */
 export function Sidebar({ collapsed = false, onToggle }: { collapsed?: boolean; onToggle: () => void }) {
   return (
-    <aside
-      className={cn(
-        'hidden shrink-0 flex-col border-r bg-sidebar transition-[width] duration-200 md:flex',
-        collapsed ? 'w-[76px]' : 'w-[264px]',
-      )}
-    >
+    <aside className="flex h-full w-full flex-col bg-sidebar">
       <SidebarContent collapsed={collapsed} onToggle={onToggle} marker />
     </aside>
   )
 }
 
 export function SidebarContent({ collapsed = false, onToggle, onNavigate, marker = false }: SidebarProps) {
-  const { openConnect, openCreateAccount } = useShell()
+  const { openCreateAccount } = useShell()
   const { data } = useMailboxes()
   const accounts = (data?.items ?? []).filter((m) => m.isAccount)
   const inboxUnread = accounts.reduce((n, a) => n + (a.folders.find((f) => f.name === 'INBOX')?.unread ?? 0), 0)
 
   return (
-    <div className={cn('flex h-full min-h-0 flex-col pt-8 pb-5', collapsed ? 'items-center px-3' : 'px-5')}>
+    // In the desktop app the sidebar's empty space and logo row move the
+    // window, and the logo row lines up with the compact page header (except
+    // on macOS, where the traffic lights need the space above it).
+    <div
+      {...dragRegion(false)}
+      className={cn(
+        'flex h-full min-h-0 flex-col pb-5',
+        // Desktop: one 12px inset, so the logo sits 12px from the top, the
+        // left and the header line below it (52px header, 28px logo).
+        compactTop ? 'pt-2.5' : 'pt-8',
+        collapsed ? 'items-center px-3' : compactTop ? 'px-3' : 'px-5',
+      )}
+    >
       {collapsed && onToggle ? (
-        <div className="mb-7">
+        <div {...dragRegion()} className={compactTop ? 'mb-4' : 'mb-7'}>
           <ExpandToggle onClick={onToggle} />
         </div>
       ) : (
-        <div className="mb-7 flex items-center justify-between pl-1">
+        <div {...dragRegion()} className={cn('flex items-center justify-between', compactTop ? 'mb-4' : 'mb-7 pl-1')}>
           <Link
             to="/sent"
             onClick={onNavigate}
@@ -89,10 +101,14 @@ export function SidebarContent({ collapsed = false, onToggle, onNavigate, marker
           marker={marker}
           onNavigate={onNavigate}
         />
-        <NavButton icon={Plug} label="Connection" collapsed={collapsed} onClick={() => {
-            onNavigate?.()
-            openConnect()
-          }} />
+        <NavItem
+          to="/connection"
+          icon={Plug}
+          label="Connection"
+          collapsed={collapsed}
+          marker={marker}
+          onNavigate={onNavigate}
+        />
         <AppearanceItem collapsed={collapsed} />
       </nav>
 
@@ -217,37 +233,12 @@ function NavItem({
       {active && marker && (
         <span
           aria-hidden
-          className={cn('absolute top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-l-full bg-foreground', collapsed ? '-right-[13px]' : '-right-[21px]')}
+          className={cn('absolute top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-l-full bg-foreground', collapsed || compactTop ? '-right-[13px]' : '-right-[21px]')}
         />
       )}
     </Link>
   )
   return collapsed ? <WithTooltip label={label}>{link}</WithTooltip> : link
-}
-
-function NavButton({
-  icon: Icon,
-  label,
-  collapsed,
-  onClick,
-}: {
-  icon: LucideIcon
-  label: string
-  collapsed: boolean
-  onClick: () => void
-}) {
-  const button = (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-label={collapsed ? label : undefined}
-      className={cn(itemBase, collapsed ? 'size-10 justify-center' : 'w-full px-3 text-left')}
-    >
-      <Icon className="size-[18px] shrink-0 text-muted-foreground" strokeWidth={1.75} />
-      {!collapsed && label}
-    </button>
-  )
-  return collapsed ? <WithTooltip label={label}>{button}</WithTooltip> : button
 }
 
 const themes: { value: Theme; label: string; icon: LucideIcon }[] = [

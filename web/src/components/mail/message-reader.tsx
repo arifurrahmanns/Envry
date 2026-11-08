@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   ArrowLeft,
   CircleCheck,
@@ -91,10 +91,13 @@ function ReaderContent({
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
-      <article className="px-5 pt-6 pb-10 md:px-8">
-        <div className="flex items-center gap-1">
+      <article className="px-5 pt-5 pb-10 md:px-8">
+        <div className="flex items-start gap-2">
           <ActionButton icon={ArrowLeft} label="Back" onClick={onBack} className="-ml-2 md:hidden" />
-          <div className="ml-auto flex items-center gap-1">
+          <h2 className="min-w-0 flex-1 pt-1 text-[20px] leading-snug font-semibold tracking-tight text-balance break-words">
+            {m.subject || '(no subject)'}
+          </h2>
+          <div className="-mr-2 flex shrink-0 items-center gap-0.5">
             <ActionButton icon={Reply} label="Reply" shortcut="R" onClick={reply} />
             {delivery && onToggleSeen && (
               <ActionButton
@@ -115,44 +118,40 @@ function ReaderContent({
             />
           </div>
         </div>
+        {m.preview && <p className="mt-1 line-clamp-1 text-[13px] text-muted-foreground">{m.preview}</p>}
 
-        <h2 className="mt-3 text-[26px] leading-tight font-medium tracking-tight text-balance break-words md:text-[28px]">
-          {m.subject || '(no subject)'}
-        </h2>
-        {m.preview && (
-          <p className="mt-3 line-clamp-2 max-w-3xl text-[14px] leading-relaxed text-muted-foreground">{m.preview}</p>
-        )}
-
-        <dl className="mt-6 grid grid-cols-[96px_minmax(0,1fr)] items-center gap-x-4 gap-y-3 text-[14px] sm:grid-cols-[112px_minmax(0,1fr)]">
-          <Property label="Status">
-            <StatusPill delivery={delivery} />
-          </Property>
-          <Property label="From">
-            <PersonChip address={m.from} />
-          </Property>
-          <PeopleProperty label="To" list={m.to} />
-          <PeopleProperty label="Cc" list={m.cc} />
-          <PeopleProperty label="Bcc" list={bcc} />
-          {viewingAs && (
-            <Property label="Mailbox">
-              <PersonChip
-                address={{ name: '', address: viewingAs }}
-                suffix={delivery?.rcptType === 'bcc' ? 'Bcc copy' : undefined}
-              />
-            </Property>
-          )}
-          <Property label="Date">{mediumTime(messageTime(m))}</Property>
-          <Property label="Size">{fileSize(m.size)}</Property>
-          <Property label="Tags">
-            <div className="flex flex-wrap gap-1.5">
-              {tagsFor(m, delivery).map((t) => (
-                <span key={t} className="rounded-full bg-muted px-3 py-1 text-[13px] text-foreground/85">
-                  {t}
-                </span>
-              ))}
+        <div className="mt-4 flex gap-3">
+          <SenderAvatar name={m.from.name} address={m.from.address} size="md" />
+          <div className="min-w-0 flex-1 text-[13px] leading-5">
+            <div className="flex items-baseline gap-3">
+              <p className="min-w-0 truncate">
+                <span className="text-[14px] font-medium">{displayName(m.from)}</span>
+                {m.from.name.trim() && <span className="ml-1.5 text-muted-foreground">{m.from.address}</span>}
+              </p>
+              <time dateTime={messageTime(m)} className="ml-auto shrink-0 text-[12px] text-muted-foreground tabular-nums">
+                {mediumTime(messageTime(m))}
+              </time>
             </div>
-          </Property>
-        </dl>
+            <Recipients label="to" list={m.to} />
+            <Recipients label="cc" list={m.cc} />
+            <Recipients label="bcc" list={bcc} />
+            {viewingAs && (
+              <p className="text-muted-foreground">
+                in <span className="text-foreground/85">{viewingAs}</span>
+                {delivery?.rcptType === 'bcc' && ' (Bcc copy)'}
+              </p>
+            )}
+          </div>
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center gap-1.5 sm:pl-12">
+          <StatusPill delivery={delivery} />
+          {[...tagsFor(m, delivery), fileSize(m.size)].map((t) => (
+            <span key={t} className="rounded-md bg-muted px-1.5 py-0.5 text-[12px] text-muted-foreground">
+              {t}
+            </span>
+          ))}
+        </div>
 
         <Divider />
         <MessageBody message={m} />
@@ -178,43 +177,27 @@ function ReaderContent({
 }
 
 function Divider() {
-  return <div aria-hidden className="my-6 h-px bg-border" />
+  return <div aria-hidden className="my-5 h-px bg-border" />
 }
 
-function Property({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <>
-      <dt className="text-muted-foreground">{label}</dt>
-      <dd className="min-w-0">{children}</dd>
-    </>
-  )
-}
-
-function PeopleProperty({ label, list }: { label: string; list: Address[] }) {
+/** "to Ada, bob@example.test": names where known, the address on hover. */
+function Recipients({ label, list }: { label: string; list: Address[] }) {
   if (list.length === 0) return null
   return (
-    <Property label={label}>
-      <div className="flex flex-wrap gap-1.5">
-        {list.map((a) => (
-          <PersonChip key={a.address} address={a} />
-        ))}
-      </div>
-    </Property>
-  )
-}
-
-function PersonChip({ address: a, suffix }: { address: Address; suffix?: string }) {
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <span className="inline-flex max-w-full items-center gap-1.5 rounded-full border py-0.5 pr-2.5 pl-0.5 text-[14px]">
-          <SenderAvatar name={a.name} address={a.address} size="xs" />
-          <span className="truncate">{displayName(a)}</span>
-          {suffix && <span className="shrink-0 text-muted-foreground">({suffix})</span>}
-        </span>
-      </TooltipTrigger>
-      <TooltipContent>{a.address}</TooltipContent>
-    </Tooltip>
+    <p className="line-clamp-2 text-muted-foreground">
+      {label}{' '}
+      {list.map((a, i) => (
+        <Fragment key={a.address}>
+          {i > 0 && ', '}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="text-foreground/85">{displayName(a)}</span>
+            </TooltipTrigger>
+            <TooltipContent>{a.address}</TooltipContent>
+          </Tooltip>
+        </Fragment>
+      ))}
+    </p>
   )
 }
 
@@ -225,8 +208,8 @@ function StatusPill({ delivery }: { delivery?: Delivery }) {
       ? (['Read', CircleCheck, 'bg-success/15 text-success'] as const)
       : (['Unread', Contrast, 'bg-warning/15 text-warning'] as const)
   return (
-    <span className={cn('inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[14px] font-medium', tone)}>
-      <Icon className="size-4" strokeWidth={2} />
+    <span className={cn('inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[12px] font-medium', tone)}>
+      <Icon className="size-3.5" strokeWidth={2} />
       {label}
     </span>
   )

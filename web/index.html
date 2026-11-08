@@ -10,9 +10,9 @@
       // Apply the theme before first paint to avoid a light/dark flash.
       // Mirrors resolve() in src/components/theme-provider.tsx.
       ;(function () {
-        var t = 'dark'
+        var t = 'system'
         try {
-          t = localStorage.getItem('envry-ui-theme') || 'dark'
+          t = localStorage.getItem('envry-ui-theme') || 'system'
         } catch (e) {}
         var dark = t === 'dark' || (t === 'system' && matchMedia('(prefers-color-scheme: dark)').matches)
         document.documentElement.classList.toggle('dark', dark)
