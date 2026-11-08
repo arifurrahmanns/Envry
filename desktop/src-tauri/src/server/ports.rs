@@ -80,9 +80,14 @@ fn bind_error(port: u16) -> Option<&'static str> {
     None
 }
 
-/// Opens and closes a listener the way Go does: no SO_REUSEADDR.
+/// Opens and closes a listener with the options Go uses, so the answer
+/// matches what Envry will get: SO_REUSEADDR on Unix (a port held only by
+/// connections in TIME_WAIT, as after a restart, is free there) and none on
+/// Windows (where it would let a bind take over a port in use).
 fn try_listen(addr: SocketAddr, dual_stack: bool) -> io::Result<()> {
     let s = Socket::new(Domain::for_address(addr), Type::STREAM, Some(Protocol::TCP))?;
+    #[cfg(unix)]
+    s.set_reuse_address(true)?;
     if dual_stack {
         s.set_only_v6(false)?;
     }
@@ -300,6 +305,23 @@ mod tests {
         s.listen(1).unwrap();
         let port = s.local_addr().unwrap().as_socket().unwrap().port();
         assert_eq!(bind_error(port), Some("inUse"));
+    }
+
+    /// Like a port Envry served mail on just before a restart: the server
+    /// closed first, so its end of the connection waits in TIME_WAIT. Go
+    /// can listen there again on Unix, so it must not count as busy.
+    #[cfg(unix)]
+    #[test]
+    fn time_wait_is_not_busy() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let client = TcpStream::connect(("127.0.0.1", port)).unwrap();
+        let (server, _) = listener.accept().unwrap();
+        drop(server);
+        std::thread::sleep(Duration::from_millis(50));
+        drop(client);
+        drop(listener);
+        assert_eq!(bind_error(port), None);
     }
 
     #[test]
