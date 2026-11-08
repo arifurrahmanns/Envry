@@ -22,6 +22,18 @@ Envry is a local email testing server. It captures every email your application 
 
 ## Installation
 
+**Desktop app** (Windows, macOS and Linux)
+
+| System | Download |
+| --- | --- |
+| Windows 10 and 11 | [Envry-setup-windows-x64.exe](https://github.com/arifurrahmanns/envry/releases/latest/download/Envry-setup-windows-x64.exe) |
+| macOS 11 or later (Apple silicon and Intel) | [Envry-macos-universal.dmg](https://github.com/arifurrahmanns/envry/releases/latest/download/Envry-macos-universal.dmg) |
+| Linux | [Envry-linux-x86_64.AppImage](https://github.com/arifurrahmanns/envry/releases/latest/download/Envry-linux-x86_64.AppImage) or [envry-desktop_amd64.deb](https://github.com/arifurrahmanns/envry/releases/latest/download/envry-desktop_amd64.deb) |
+
+The app runs Envry in the background and shows the web UI in its own window. Its tray (menu-bar) icon shows whether Envry is live and how much mail arrived since you last looked; new mail raises a notification, and Envry can start at login. Closing the window keeps Envry catching mail; choose **Quit Envry** in the tray menu to stop it. If a port is taken, for example by Mailpit, which uses the same defaults, the app lists the busy ports and what holds them, and can move Envry to other ports. The app and the `envry` command share one database, `~/.envry/envry.db`. On Windows the installer needs no administrator rights, and Envry appears under *Settings › Apps*, where you can uninstall it.
+
+The installers are not code-signed yet, so the first launch shows a warning. On Windows, SmartScreen says "Windows protected your PC": choose **More info › Run anyway**. On macOS, right-click Envry in Applications and choose **Open**, or run `xattr -dr com.apple.quarantine /Applications/Envry.app`.
+
 **macOS and Linux**
 
 ```bash
@@ -36,7 +48,7 @@ The script downloads the latest release for your system, verifies its checksum a
 irm https://raw.githubusercontent.com/arifurrahmanns/envry/main/install.ps1 | iex
 ```
 
-The script verifies the download, installs `envry.exe` to `%LOCALAPPDATA%\Programs\Envry`, adds that folder to your PATH and adds **Envry** to the Start menu. It needs no administrator rights; run it again to upgrade. `ENVRY_VERSION` and `ENVRY_INSTALL_DIR` work as above, and `ENVRY_NO_MODIFY_PATH=1` leaves PATH and the Start menu untouched. To uninstall, delete that folder and the Start-menu shortcut, and remove the folder from your user PATH under *Settings › System › About › Advanced system settings › Environment Variables*.
+The script verifies the download, installs `envry.exe` to `%LOCALAPPDATA%\Programs\Envry`, adds that folder to your PATH and adds **Envry (console)** to the Start menu. It needs no administrator rights; run it again to upgrade. `ENVRY_VERSION` and `ENVRY_INSTALL_DIR` work as above, and `ENVRY_NO_MODIFY_PATH=1` leaves PATH and the Start menu untouched. To uninstall, delete that folder and the Start-menu shortcut, and remove the folder from your user PATH under *Settings › System › About › Advanced system settings › Environment Variables*.
 
 **Homebrew (macOS)**
 
@@ -256,6 +268,8 @@ Run `envry --help` for the full list of commands and flags.
 | `make test` | Go tests with the race detector, plus a TypeScript type check |
 | `make lint` | `go vet` and `oxlint` |
 | `make fmt` | Format Go code |
+| `make desktop-dev` | Run the desktop app from source (needs Rust; see [Tauri's prerequisites](https://v2.tauri.app/start/prerequisites/)) |
+| `make desktop` | Build the desktop app installers into `desktop/src-tauri/target/release/bundle/` |
 
 On Windows, run the same targets with `mingw32-make` or any GNU Make 4.x.
 
@@ -268,7 +282,7 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
-The Release workflow runs the tests, then publishes the archives and `checksums.txt` to GitHub Releases. When the `TAP_GITHUB_TOKEN` secret is set (a token with write access to the `homebrew-tap` and `scoop-bucket` repositories), it also updates the Homebrew cask and the Scoop manifest. CI builds every archive from the same configuration on each push, without publishing, so release problems show up before tagging.
+The Release workflow runs the tests, then publishes the archives and `checksums.txt` to GitHub Releases, and builds the desktop installers on Windows, macOS and Linux and attaches them with `desktop-checksums.txt`. When the `TAP_GITHUB_TOKEN` secret is set (a token with write access to the `homebrew-tap` and `scoop-bucket` repositories), it also updates the Homebrew cask and the Scoop manifest. CI builds every archive from the same configuration on each push, without publishing, so release problems show up before tagging.
 
 ### Project layout
 
@@ -291,6 +305,10 @@ internal/
   version/          Build metadata
   webui/            Embedded web UI with SPA fallback
 web/                React + TypeScript + Tailwind CSS + shadcn/ui
+desktop/            Desktop app (Tauri 2): runs envry as a sidecar, tray, notifications
+  scripts/          Builds the envry sidecar for the Tauri target
+  src/              Status page shown while Envry starts, is stopped or hits a port conflict
+  src-tauri/        Rust side: server lifecycle, tray, window, capabilities, icons, bundling
 docs/images/        Screenshots used in this README
 install.sh          Installer for Linux and macOS releases
 install.ps1         Installer for Windows releases

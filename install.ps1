@@ -128,14 +128,21 @@ public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint msg, UIntPtr wP
         }
 
         # The shortcut opens Envry in its own window and the web UI in the browser.
-        $shortcut = Join-Path ([Environment]::GetFolderPath('Programs')) 'Envry.lnk'
+        # "Envry" is the desktop app's shortcut; older versions of this script
+        # used that name for the console one, so move it if it is ours.
+        $programs = [Environment]::GetFolderPath('Programs')
         $shell = New-Object -ComObject WScript.Shell
+        $old = Join-Path $programs 'Envry.lnk'
+        if ((Test-Path -LiteralPath $old) -and (Test-SameFolder $shell.CreateShortcut($old).TargetPath $exe)) {
+            Remove-Item -LiteralPath $old -Force
+        }
+        $shortcut = Join-Path $programs 'Envry (console).lnk'
         $link = $shell.CreateShortcut($shortcut)
         $link.TargetPath = $exe
         $link.WorkingDirectory = $dir
         $link.Description = 'Envry local email testing server'
         $link.Save()
-        Write-Host 'Added Envry to the Start menu.'
+        Write-Host 'Added "Envry (console)" to the Start menu.'
 
         Write-Host ''
         Write-Host 'Start Envry from the Start menu, or run "envry" in a terminal.'

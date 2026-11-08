@@ -1,0 +1,153 @@
+name: Desktop
+
+# Builds the desktop app installers. Pull requests that touch the app get a
+# build check; the Release workflow calls this with the tag so the
+# installers are attached to the release GoReleaser created.
+on:
+  pull_request:
+    paths:
+      - "desktop/**"
+      - "cmd/envry/**"
+      - ".github/workflows/desktop.yml"
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      tag:
+        description: Release tag (vX.Y.Z) to attach the installers to
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-${{ github.ref }}-${{ inputs.tag }}
+  cancel-in-progress: true
+
+env:
+  GOTOOLCHAIN: local
+
+jobs:
+  build:
+    name: Build (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows
+            os: windows-latest
+            args: ""
+          - name: macos
+            os: macos-latest
+            args: --target universal-apple-darwin
+          - name: linux
+            # The oldest supported Ubuntu keeps the AppImage and .deb
+            # working on older glibc versions.
+            os: ubuntu-22.04
+            args: ""
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.25.x"
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            web/package-lock.json
+            desktop/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.name == 'macos' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri
+
+      - name: Install Linux build dependencies
+        if: matrix.name == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev patchelf
+
+      - name: Install web dependencies
+        run: npm ci
+        working-directory: web
+
+      - name: Install desktop dependencies
+        run: npm ci
+        working-directory: desktop
+
+      - name: Rust tests
+        if: matrix.name != 'macos'
+        shell: bash
+        working-directory: desktop
+        # tauri-build needs the sidecar to exist before anything compiles.
+        run: |
+          npm run sidecar
+          cargo test --lib --manifest-path src-tauri/Cargo.toml --locked
+
+      - name: Build installers
+        shell: bash
+        working-directory: desktop
+        env:
+          ENVRY_VERSION: ${{ inputs.tag }}
+          # The sidecar (and web UI) were already built for the tests.
+          ENVRY_SKIP_WEB: ${{ matrix.name != 'macos' && '1' || '0' }}
+        run: |
+          args=(${{ matrix.args }})
+          if [ -n "$ENVRY_VERSION" ]; then
+            args+=(--config "{\"version\":\"${ENVRY_VERSION#v}\"}")
+          fi
+          npx tauri build "${args[@]}"
+
+      - name: Collect installers
+        shell: bash
+        run: |
+          mkdir -p out
+          t=desktop/src-tauri/target
+          case "${{ matrix.name }}" in
+            windows)
+              cp "$t"/release/bundle/nsis/*-setup.exe out/Envry-setup-windows-x64.exe ;;
+            macos)
+              cp "$t"/universal-apple-darwin/release/bundle/dmg/*.dmg out/Envry-macos-universal.dmg ;;
+            linux)
+              cp "$t"/release/bundle/appimage/*.AppImage out/Envry-linux-x86_64.AppImage
+              cp "$t"/release/bundle/deb/*.deb out/envry-desktop_amd64.deb ;;
+          esac
+          ls -la out
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: installers-${{ matrix.name }}
+          path: out/*
+          if-no-files-found: error
+
+  publish:
+    name: Attach to release
+    if: inputs.tag != ''
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: installers-*
+          merge-multiple: true
+          path: out
+
+      - name: Checksums
+        run: cd out && sha256sum * > desktop-checksums.txt && cat desktop-checksums.txt
+
+      - name: Upload
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ inputs.tag }}" out/* --clobber --repo "${{ github.repository }}"

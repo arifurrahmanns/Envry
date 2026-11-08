@@ -44,3 +44,12 @@ jobs:
           # Write access to the homebrew-tap and scoop-bucket repositories.
           # Optional: without it the release is published without them.
           TAP_GITHUB_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
+
+  desktop:
+    name: Desktop installers
+    needs: release
+    permissions:
+      contents: write
+    uses: ./.github/workflows/desktop.yml
+    with:
+      tag: ${{ github.ref_name }}

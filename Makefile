@@ -20,7 +20,7 @@ AIR_FLAGS := \
 	-misc.clean_on_exit "true"
 
 .DEFAULT_GOAL := build
-.PHONY: dev dev-go dev-web build ui test lint fmt
+.PHONY: dev dev-go dev-web build ui test lint fmt desktop desktop-dev
 
 # Go server with hot reload + Vite dev server (open http://localhost:5173).
 # Vite proxies /api and /ws to the Go server on :8025.
@@ -51,5 +51,16 @@ lint: web/node_modules
 fmt:
 	gofmt -w cmd internal
 
+# Desktop app (Tauri 2, needs Rust). The installers land in
+# desktop/src-tauri/target/release/bundle/.
+desktop: web/node_modules desktop/node_modules
+	cd desktop && npm run build
+
+desktop-dev: web/node_modules desktop/node_modules
+	cd desktop && npm run dev
+
 web/node_modules: web/package-lock.json
 	cd web && npm ci
+
+desktop/node_modules: desktop/package-lock.json
+	cd desktop && npm ci

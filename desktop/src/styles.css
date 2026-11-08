@@ -1,0 +1,331 @@
+/* Status page of the desktop app. Tokens mirror the dark theme of the web
+   UI (web/src/styles/globals.css). */
+:root {
+  color-scheme: dark;
+  --radius: 0.625rem;
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.97 0 0);
+  --card: oklch(0.17 0 0);
+  --primary: oklch(0.97 0 0);
+  --primary-foreground: oklch(0.16 0 0);
+  --secondary: oklch(0.235 0 0);
+  --secondary-foreground: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.66 0 0);
+  --border: oklch(1 0 0 / 9%);
+  --input: oklch(1 0 0 / 16%);
+  --ring: oklch(0.55 0 0);
+  --destructive: oklch(0.65 0.21 25);
+  --brand: oklch(0.637 0.237 25.3);
+  --success: oklch(0.74 0.16 152);
+  --warning: oklch(0.86 0.17 92);
+  /* Primary buttons wear the app icon (see --primary-* in the web UI). */
+  --primary-top: oklch(0.36 0.006 286);
+  --primary-bottom: oklch(0.22 0.005 286);
+  --primary-glow: oklch(0.637 0.237 25.3 / 85%);
+  --primary-edge: oklch(1 0 0 / 12%);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--background);
+  color: var(--foreground);
+  font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+}
+
+/* The window has no native title bar (see src-tauri/src/window.rs): the
+   top strip moves the window and holds the buttons in the corner. */
+.titlebar {
+  position: fixed;
+  inset: 0 0 auto 0;
+  z-index: 10;
+  display: flex;
+  height: 52px;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.controls {
+  display: flex;
+  height: 100%;
+  margin-left: auto;
+}
+
+.controls button {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted-foreground);
+}
+
+.controls button:hover {
+  filter: none;
+  background: oklch(1 0 0 / 10%);
+  color: var(--foreground);
+}
+
+.controls button.close:hover {
+  background: var(--destructive);
+  color: var(--primary);
+}
+
+.controls svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+#maximize .when-maximized,
+.maximized #maximize .when-normal {
+  display: none;
+}
+
+.maximized #maximize .when-maximized {
+  display: block;
+  width: 14px;
+  height: 14px;
+}
+
+#maximize .when-normal {
+  width: 14px;
+  height: 14px;
+}
+
+/* macOS draws its traffic lights over the left end instead. */
+.mac .controls {
+  display: none;
+}
+
+main {
+  flex: 1;
+  overflow: auto;
+  width: 100%;
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 10vh 24px 48px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 32px;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.brand svg {
+  width: 28px;
+  height: 28px;
+}
+
+h1 {
+  margin: 0 0 6px;
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+p {
+  margin: 0 0 16px;
+  color: var(--muted-foreground);
+}
+
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: var(--muted-foreground);
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted-foreground);
+}
+
+.dot.live {
+  background: var(--success);
+}
+
+.dot.error {
+  background: var(--brand);
+}
+
+.spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border);
+  border-top-color: var(--foreground);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+ul.busy {
+  list-style: none;
+  margin: 0 0 16px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+}
+
+ul.busy li {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 14px;
+}
+
+ul.busy li + li {
+  border-top: 1px solid var(--border);
+}
+
+ul.busy .what {
+  font-weight: 500;
+}
+
+ul.busy .who {
+  color: var(--muted-foreground);
+  text-align: right;
+}
+
+pre {
+  max-height: 220px;
+  overflow: auto;
+  margin: 0 0 16px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+  color: var(--muted-foreground);
+  font: 12px/1.5 ui-monospace, "Cascadia Mono", Menlo, monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0 24px;
+}
+
+button {
+  height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) - 2px);
+  background: var(--secondary);
+  color: var(--secondary-foreground);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+button.primary {
+  border-color: var(--primary-edge);
+  background-image:
+    radial-gradient(120% 150% at 100% 100%, var(--primary-glow) 0%, transparent 62%),
+    linear-gradient(180deg, var(--primary-top), var(--primary-bottom));
+  color: var(--foreground);
+  box-shadow: inset 0 1px 0 var(--primary-edge);
+}
+
+button.primary:hover {
+  filter: brightness(1.15);
+}
+
+button:hover {
+  filter: brightness(1.08);
+}
+
+button:focus-visible,
+input:focus-visible,
+summary:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+details {
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+}
+
+summary {
+  cursor: pointer;
+  color: var(--muted-foreground);
+  margin-bottom: 12px;
+}
+
+.ports {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+label {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+
+input {
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--input);
+  border-radius: calc(var(--radius) - 2px);
+  background: transparent;
+  color: var(--foreground);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+}
+
+input.changed {
+  border-color: var(--warning);
+}
+
+.error-text {
+  color: var(--destructive);
+}
+
+.note {
+  font-size: 12px;
+}
