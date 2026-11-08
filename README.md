@@ -1,38 +1,60 @@
-# Envry
+<p align="center">
+  <img src="desktop/src-tauri/icons/128x128.png" width="96" height="96" alt="Envry app icon">
+</p>
 
-Envry is a local email testing server. It captures every email your application sends over SMTP, gives each recipient a mailbox, and serves those mailboxes back over POP3, IMAP, a REST API and a web UI. Nothing is ever relayed to the internet.
+<h1 align="center">Envry</h1>
 
-![Envry's Sent view with an HTML email open in the reader](docs/images/sent.png)
+<p align="center">
+  A desktop app for testing email locally, on Windows, macOS and Linux.<br>
+  It catches every email your app sends, gives each recipient a mailbox, and serves them back over IMAP, POP3 and a REST API.<br>
+  Nothing is ever delivered to the internet.
+</p>
 
-> **Status:** early development; expect breaking changes before 1.0. SMTP capture, POP3, IMAP (all with optional TLS), the web UI, the REST API, message checks and failure simulation work today.
+<p align="center">
+  <a href="https://github.com/arifurrahmanns/envry/releases/latest/download/Envry-setup-windows-x64.exe"><b>Windows</b></a> ·
+  <a href="https://github.com/arifurrahmanns/envry/releases/latest/download/Envry-macos-universal.dmg"><b>macOS</b></a> ·
+  <a href="https://github.com/arifurrahmanns/envry/releases/latest/download/Envry-linux-x86_64.AppImage"><b>Linux</b></a> ·
+  <a href="https://github.com/arifurrahmanns/envry/releases/latest">All downloads</a>
+</p>
+
+![Envry on Windows: the Sent list with an HTML email open in the reader](docs/images/app-dark.png)
+
+> **Status:** early development; expect breaking changes before 1.0. SMTP capture, POP3, IMAP (all with optional TLS), the desktop app, the REST API, message checks and failure simulation work today.
 
 ## Features
 
+- **A real desktop app.** Envry lives in the tray (the menu bar on macOS) with a Live/Offline status and a count of new mail, shows a notification when mail arrives, and can start at login. Closing the window keeps it catching mail.
 - **SMTP capture** on port 1025. Any username and password are accepted.
-- **A mailbox per recipient**, created automatically, including BCC recipients.
+- **A mailbox per recipient**, created automatically, including Bcc recipients.
 - **POP3 and IMAP** access to every mailbox, so you can test code that receives mail.
-- **Web UI** with three views: Sent, Receivers and Inbox.
-- **REST API and live events** so automated tests can wait for and assert on emails.
+- **A mail-client interface**: Sent, Receivers and Inbox views, a reader with preview, text, source and header views, resizable panes, a composer for test emails, and light and dark themes that follow your system.
+- **Clear port conflicts.** If Mailpit or another Envry already uses a port, Envry names the program holding it and can move to other ports in one click.
 - **Message checks** for a missing plain-text part, images without alt text, Gmail clipping, broken links and spam-prone headers.
 - **Failure simulation** to test how your application handles rejected recipients, temporary errors and slow servers.
-- **`envry send`** to fire a test email from the command line.
-- **One binary** with the UI embedded; no external services.
+- **REST API and live events** so automated tests can wait for and assert on emails.
+- **A headless `envry` command** with the same server, for CI, containers and servers.
 
-![Receivers view: one card per recipient with unread counts](docs/images/receivers.png)
+## Download and install
 
-## Installation
-
-**Desktop app** (Windows, macOS and Linux)
+### Desktop app
 
 | System | Download |
 | --- | --- |
-| Windows 10 and 11 | [Envry-setup-windows-x64.exe](https://github.com/arifurrahmanns/envry/releases/latest/download/Envry-setup-windows-x64.exe) |
+| Windows 10 and 11 (x64) | [Envry-setup-windows-x64.exe](https://github.com/arifurrahmanns/envry/releases/latest/download/Envry-setup-windows-x64.exe) |
 | macOS 11 or later (Apple silicon and Intel) | [Envry-macos-universal.dmg](https://github.com/arifurrahmanns/envry/releases/latest/download/Envry-macos-universal.dmg) |
-| Linux | [Envry-linux-x86_64.AppImage](https://github.com/arifurrahmanns/envry/releases/latest/download/Envry-linux-x86_64.AppImage) or [envry-desktop_amd64.deb](https://github.com/arifurrahmanns/envry/releases/latest/download/envry-desktop_amd64.deb) |
+| Linux (x86-64) | [Envry-linux-x86_64.AppImage](https://github.com/arifurrahmanns/envry/releases/latest/download/Envry-linux-x86_64.AppImage) or [envry-desktop_amd64.deb](https://github.com/arifurrahmanns/envry/releases/latest/download/envry-desktop_amd64.deb) |
 
-The app runs Envry in the background and shows the web UI in its own window. Its tray (menu-bar) icon shows whether Envry is live and how much mail arrived since you last looked; new mail raises a notification, and Envry can start at login. Closing the window keeps Envry catching mail; choose **Quit Envry** in the tray menu to stop it. If a port is taken, for example by Mailpit, which uses the same defaults, the app lists the busy ports and what holds them, and can move Envry to other ports. The app and the `envry` command share one database, `~/.envry/envry.db`. On Windows the installer needs no administrator rights, and Envry appears under *Settings › Apps*, where you can uninstall it.
+- **Windows:** run the installer. It needs no administrator rights and adds Envry to the Start menu and to *Settings › Apps*, where you can uninstall it.
+- **macOS:** open the disk image and drag Envry to Applications.
+- **Linux:** make the AppImage executable (`chmod +x Envry-linux-x86_64.AppImage`) and run it, or install the package with `sudo apt install ./envry-desktop_amd64.deb`. The tray icon needs a desktop with AppIndicator support (on GNOME, the AppIndicator extension).
 
 The installers are not code-signed yet, so the first launch shows a warning. On Windows, SmartScreen says "Windows protected your PC": choose **More info › Run anyway**. On macOS, right-click Envry in Applications and choose **Open**, or run `xattr -dr com.apple.quarantine /Applications/Envry.app`.
+
+Envry keeps mail in `~/.envry/envry.db`, shared with the `envry` command.
+
+### Command-line server
+
+For CI, containers and servers, the same server runs as a single `envry` binary, with the interface at <http://localhost:8025>.
 
 **macOS and Linux**
 
@@ -65,30 +87,44 @@ scoop install envry
 
 **Manual download**: archives for Linux, macOS and Windows on amd64 and arm64 are on the [releases page](https://github.com/arifurrahmanns/envry/releases). Each contains a single `envry` binary.
 
-**From source** (requires Go 1.25+, Node.js 20+ and GNU Make): run `make build`; the binary is written to `bin/envry`.
+**From source** (requires Go 1.25+, Node.js 20+ and GNU Make): run `make build`; the binary is written to `bin/envry`. See [Development](#development) for building the desktop app.
 
 ## Quick start
 
-```bash
-envry
-```
-
-Then open <http://localhost:8025> and point your application at `localhost:1025`.
-
-On Windows you can also start Envry from the Start menu or by double-clicking `envry.exe`. It runs in its own window, lists its addresses and opens the web UI in your browser; close the window to stop it. If a port is taken, for example by Mailpit, which uses the same defaults, the window stays open and says which one.
+Open Envry and point your application's mailer at `localhost:1025`. Mail shows up in the app the moment it is sent. The **Connection** page lists every address and port, with ready-made settings for Node.js, Laravel, Python and Django.
 
 | Service | Default port |
 | --- | --- |
 | SMTP | 1025 |
 | POP3 | 1110 |
 | IMAP | 1143 |
-| Web UI and API | 8025 |
+| Interface and API | 8025 |
+
+With the command-line server, run `envry` and open <http://localhost:8025>.
+
+## A quick tour
+
+Envry follows your system's light or dark theme; you can also pick one under **Appearance**.
+
+![Envry in the light theme](docs/images/app-light.png)
+
+**Receivers** has a card for everyone your app emailed, showing what each person actually got, Bcc copies included:
+
+![Receivers: one card per recipient with unread counts](docs/images/receivers.png)
+
+**Compose** sends a test email through Envry's own SMTP server, to check a mail client setup or a template:
+
+![Composing a test email with recipient chips](docs/images/compose.png)
+
+**Connection** shows the server settings for your app and for mail clients, each ready to copy:
+
+![Connection page with SMTP, IMAP and POP3 settings](docs/images/connection.png)
 
 ## Reading mail over IMAP
 
 Connect any mail client (Thunderbird, Apple Mail, Outlook) or library to the IMAP port with a mailbox address as the username. Every mailbox has `INBOX`, `Sent`, `Drafts` and `Trash`; clients can create, rename and delete their own folders too.
 
-- Changes show up everywhere at once: mail captured over SMTP appears in an idling client within milliseconds, and reading, flagging or deleting a message in the client updates the web UI live (and the other way round).
+- Changes show up everywhere at once: mail captured over SMTP appears in an idling client within milliseconds, and reading, flagging or deleting a message in the client updates Envry live (and the other way round).
 - When an application authenticates over SMTP as an account, a copy of what it sends is filed in that account's `Sent` folder.
 - Supported: IMAP4rev1 with `IDLE`, `MOVE`, `UIDPLUS`, `NAMESPACE`, `SPECIAL-USE`, `CHILDREN`, `LIST-EXTENDED`, `LIST-STATUS`, `STATUS=SIZE`, `ESEARCH`, `SEARCHRES`, `UNSELECT` and `APPENDLIMIT`.
 - `SEARCH` matches substrings case-insensitively in decoded headers and text parts, so partial words work.
@@ -103,20 +139,20 @@ envry --tls
 
 - **STARTTLS** is offered on the standard SMTP, IMAP and POP3 (`STLS`) ports.
 - **Implicit TLS** is served on SMTPS `1465`, IMAPS `1993` and POP3S `1995` (`--smtps`, `--imaps`, `--pop3s` change them).
-- Without `--tls-cert` and `--tls-key`, Envry generates a self-signed certificate for `localhost`, `127.0.0.1` and `::1` and keeps it in a `tls` folder next to the database, so a mail client only has to accept it once. It is renewed automatically before it expires. The SHA-256 fingerprint is logged at startup and shown in the web UI's connection settings.
+- Without `--tls-cert` and `--tls-key`, Envry generates a self-signed certificate for `localhost`, `127.0.0.1` and `::1` and keeps it in a `tls` folder next to the database, so a mail client only has to accept it once. It is renewed automatically before it expires. The SHA-256 fingerprint is logged at startup and shown on the Connection page.
 - Authentication still works without TLS, so the same accounts can be used either way.
 
 ## Reading mail over POP3
 
 Log in to the POP3 port with a mailbox address as the username, for example `dev@test.local`. Any password is accepted unless `--strict-auth` is set, in which case the address must be an account and the password must match. The maildrop is that mailbox's INBOX, oldest message first.
 
-- `RETR` marks the message as read in the web UI; `TOP` does not.
+- `RETR` marks the message as read in Envry; `TOP` does not.
 - `DELE` removes a message from that mailbox only when the session ends with `QUIT`. The message stays in Sent and in other recipients' mailboxes.
 - Supported commands: `USER`, `PASS`, `APOP`, `STAT`, `LIST`, `UIDL`, `RETR`, `TOP`, `DELE`, `NOOP`, `RSET`, `QUIT` and `CAPA`.
 
 ## Sending a test email
 
-`envry send` delivers a message to a running Envry over SMTP, which is handy for checking a mail client setup or the web UI without writing code:
+`envry send` delivers a message to a running Envry over SMTP, which is handy for checking a mail client setup or a CI job without writing code:
 
 ```bash
 envry send --to dev@test.local --subject "Hello"
@@ -145,7 +181,7 @@ The reader's **Checks** section reviews every message for problems that affect h
 
 ## Failure simulation
 
-Start Envry with these flags to see how your application copes when mail delivery goes wrong:
+Start the command-line server with these flags to see how your application copes when mail delivery goes wrong:
 
 ```bash
 envry --smtp-reject-rcpt "bounce@test.local" --smtp-reject-rcpt "*@blocked.test"
@@ -156,7 +192,7 @@ envry --smtp-reject-rate 20 --smtp-latency 3s
 - `--smtp-reject-rate` refuses that percentage of messages with `451 4.3.0` after `DATA`; nothing is stored.
 - `--smtp-latency` waits before answering `DATA`, like a slow or overloaded mail server.
 
-The web UI's Connection dialog shows which simulations are active.
+The Connection page shows which simulations are active.
 
 ## Using Envry in automated tests
 
@@ -235,7 +271,7 @@ Request bodies must be `application/json`, and the WebSocket accepts same-origin
 
 ## Configuration
 
-Every flag has a matching environment variable. Flags take precedence over environment variables.
+These flags configure the command-line server. Every flag has a matching environment variable, and flags take precedence over environment variables. In the desktop app, change the ports on the page it shows when Envry is stopped or a port is taken.
 
 | Flag | Environment variable | Default |
 | --- | --- | --- |
@@ -263,8 +299,8 @@ Run `envry --help` for the full list of commands and flags.
 
 | Command | Description |
 | --- | --- |
-| `make dev` | Go server with hot reload plus the Vite dev server at <http://localhost:5173> |
-| `make build` | Build the web UI, then a single binary in `bin/` with the UI embedded |
+| `make dev` | Go server with hot reload plus the Vite dev server for the interface at <http://localhost:5173> |
+| `make build` | Build the interface, then a single binary in `bin/` with it embedded |
 | `make test` | Go tests with the race detector, plus a TypeScript type check |
 | `make lint` | `go vet` and `oxlint` |
 | `make fmt` | Format Go code |
@@ -282,7 +318,7 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
-The Release workflow runs the tests, then publishes the archives and `checksums.txt` to GitHub Releases, and builds the desktop installers on Windows, macOS and Linux and attaches them with `desktop-checksums.txt`. When the `TAP_GITHUB_TOKEN` secret is set (a token with write access to the `homebrew-tap` and `scoop-bucket` repositories), it also updates the Homebrew cask and the Scoop manifest. CI builds every archive from the same configuration on each push, without publishing, so release problems show up before tagging.
+The Release workflow runs the tests and publishes the command-line archives and `checksums.txt` to GitHub Releases, then builds the desktop installers on Windows, macOS and Linux and attaches them with `desktop-checksums.txt`. To build the installers without releasing, run the **Desktop** workflow by hand or open a pull request that touches `desktop/`. When the `TAP_GITHUB_TOKEN` secret is set (a token with write access to the `homebrew-tap` and `scoop-bucket` repositories), it also updates the Homebrew cask and the Scoop manifest. CI builds every archive from the same configuration on each push, without publishing, so release problems show up before tagging.
 
 ### Project layout
 
@@ -303,8 +339,8 @@ internal/
   tlsutil/          Certificates: user-supplied or generated self-signed
   store/            SQLite storage, migrations and queries
   version/          Build metadata
-  webui/            Embedded web UI with SPA fallback
-web/                React + TypeScript + Tailwind CSS + shadcn/ui
+  webui/            Embeds the interface, with SPA fallback
+web/                The interface: React + TypeScript + Tailwind CSS + shadcn/ui
 desktop/            Desktop app (Tauri 2): runs envry as a sidecar, tray, notifications
   scripts/          Builds the envry sidecar for the Tauri target
   src/              Status page shown while Envry starts, is stopped or hits a port conflict
