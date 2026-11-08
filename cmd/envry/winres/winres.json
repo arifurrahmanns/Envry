@@ -1,0 +1,27 @@
+{
+  "RT_GROUP_ICON": {
+    "APP": {
+      "0000": "icon.ico"
+    }
+  },
+  "RT_VERSION": {
+    "#1": {
+      "0000": {
+        "fixed": {
+          "file_version": "0.0.0.0",
+          "product_version": "0.0.0.0"
+        },
+        "info": {
+          "0409": {
+            "CompanyName": "Envry",
+            "FileDescription": "Envry local email testing server",
+            "InternalName": "envry",
+            "LegalCopyright": "MIT License",
+            "OriginalFilename": "envry.exe",
+            "ProductName": "Envry"
+          }
+        }
+      }
+    }
+  }
+}
