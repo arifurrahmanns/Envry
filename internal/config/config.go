@@ -55,6 +55,11 @@ type Config struct {
 	UIAuth *BasicAuth
 
 	LogLevel slog.Level
+
+	// Managed is set when a supervising program, such as the desktop app,
+	// runs Envry: startup status goes to stdout as JSON lines and the server
+	// stops when stdin is closed.
+	Managed bool
 }
 
 // Account is an Inbox account declared on the command line.
@@ -86,6 +91,7 @@ type Flags struct {
 	tlsCert, tlsKey        string
 	uiAuth                 string
 	logLevel               string
+	managed                bool
 }
 
 type flagSpec struct {
@@ -116,6 +122,7 @@ var specs = []flagSpec{
 	{name: "tls-key", env: "ENVRY_TLS_KEY"},
 	{name: "ui-auth", env: "ENVRY_UI_AUTH"},
 	{name: "log-level", env: "ENVRY_LOG_LEVEL"},
+	{name: "managed", env: "ENVRY_MANAGED"},
 }
 
 // DefaultDBPath is shown in help text; it is expanded at load time.
@@ -144,6 +151,9 @@ func Register(fs *pflag.FlagSet) *Flags {
 	fs.StringVar(&f.tlsKey, "tls-key", "", "TLS private key file; self-signed if empty (env ENVRY_TLS_KEY)")
 	fs.StringVar(&f.uiAuth, "ui-auth", "", "protect the web UI and API with basic auth, user:pass (env ENVRY_UI_AUTH)")
 	fs.StringVar(&f.logLevel, "log-level", "info", "log level: debug, info, warn, error (env ENVRY_LOG_LEVEL)")
+	fs.BoolVar(&f.managed, "managed", false, "run under a supervising app: report startup as JSON lines on stdout, stop when stdin closes (env ENVRY_MANAGED)")
+	// Only the desktop app needs this; keep it out of --help.
+	_ = fs.MarkHidden("managed")
 	return f
 }
 
@@ -184,6 +194,7 @@ func (f *Flags) build() (*Config, error) {
 		TLS:         f.tls,
 		TLSCert:     f.tlsCert,
 		TLSKey:      f.tlsKey,
+		Managed:     f.managed,
 	}
 
 	for _, a := range []struct {

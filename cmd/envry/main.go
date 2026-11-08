@@ -22,7 +22,8 @@ import (
 )
 
 func main() {
-	err := newRootCmd().Execute()
+	root := newRootCmd()
+	err := root.Execute()
 	if err == nil {
 		return
 	}
@@ -30,7 +31,9 @@ func main() {
 	if h := hint(err); h != "" {
 		fmt.Fprintln(os.Stderr, h)
 	}
-	if ownsConsole() {
+	// A supervising app gives Envry a hidden console of its own, so
+	// ownsConsole is true there too; it must not wait for a key press.
+	if ownsConsole() && !managed(root, os.LookupEnv) {
 		// Started by double-click: keep the window open so the error can be read.
 		fmt.Fprint(os.Stderr, "\nPress Enter to close this window.")
 		_, _ = bufio.NewReader(os.Stdin).ReadString('\n')
@@ -80,11 +83,24 @@ func runServe(cmd *cobra.Command, flags *config.Flags) error {
 	if err != nil {
 		return err
 	}
-	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: cfg.LogLevel}))
+	err = serve(cmd, cfg)
+	if err != nil && cfg.Managed {
+		_ = writeStatus(cmd.OutOrStdout(), errorStatus(err))
+	}
+	return err
+}
+
+func serve(cmd *cobra.Command, cfg *config.Config) error {
+	log := slog.New(slog.NewTextHandler(cmd.ErrOrStderr(), &slog.HandlerOptions{Level: cfg.LogLevel}))
 	log.Info("starting envry", "version", version.Version)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	if cfg.Managed {
+		var cancel context.CancelFunc
+		ctx, cancel = stopOnEOF(ctx, cmd.InOrStdin())
+		defer cancel()
+	}
 
 	a, err := app.New(ctx, cfg, log)
 	if err != nil {
@@ -94,7 +110,12 @@ func runServe(cmd *cobra.Command, flags *config.Flags) error {
 		a.Store().Close()
 		return err
 	}
-	if ownsConsole() {
+	switch {
+	case cfg.Managed:
+		if err := writeStatus(cmd.OutOrStdout(), readyStatus(a.Addrs())); err != nil {
+			log.Warn("could not report status", "err", err)
+		}
+	case ownsConsole():
 		// Started by double-click: say what is running and open the web UI,
 		// since the user has no terminal command to go by.
 		welcome(cmd.OutOrStdout(), a.Addrs())
