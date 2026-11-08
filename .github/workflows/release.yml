@@ -53,3 +53,5 @@ jobs:
     uses: ./.github/workflows/desktop.yml
     with:
       tag: ${{ github.ref_name }}
+    # TAURI_SIGNING_PRIVATE_KEY(_PASSWORD) sign the in-app updates.
+    secrets: inherit

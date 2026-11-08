@@ -24,6 +24,7 @@
 ## Features
 
 - **A real desktop app.** Envry lives in the tray (the menu bar on macOS) with a Live/Offline status and a count of new mail, shows a notification when mail arrives, and can start at login. Closing the window keeps it catching mail.
+- **Updates itself.** Envry downloads new versions in the background and installs them when you choose **Restart to update**.
 - **SMTP capture** on port 1025. Any username and password are accepted.
 - **A mailbox per recipient**, created automatically, including Bcc recipients.
 - **POP3 and IMAP** access to every mailbox, so you can test code that receives mail.
@@ -51,6 +52,8 @@
 The installers are not code-signed yet, so the first launch shows a warning. On Windows, SmartScreen says "Windows protected your PC": choose **More info › Run anyway**. On macOS, right-click Envry in Applications and choose **Open**, or run `xattr -dr com.apple.quarantine /Applications/Envry.app`.
 
 Envry keeps mail in `~/.envry/envry.db`, shared with the `envry` command.
+
+**Updates:** from version 0.2.1 on, Envry checks for a new release shortly after it starts and every six hours, and downloads it in the background. When it is ready, Envry shows a notification and a **Restart to update** item in the tray menu; **Check for updates…** in the same menu checks right away. Each update is verified against Envry's signing key before it is installed. Version 0.2.0 has no updater, so install 0.2.1 or later from the downloads above once.
 
 ### Command-line server
 
@@ -318,7 +321,7 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
-The Release workflow runs the tests and publishes the command-line archives and `checksums.txt` to GitHub Releases, then builds the desktop installers on Windows, macOS and Linux and attaches them with `desktop-checksums.txt`. To build the installers without releasing, run the **Desktop** workflow by hand or open a pull request that touches `desktop/`. When the `TAP_GITHUB_TOKEN` secret is set (a token with write access to the `homebrew-tap` and `scoop-bucket` repositories), it also updates the Homebrew cask and the Scoop manifest. CI builds every archive from the same configuration on each push, without publishing, so release problems show up before tagging.
+The Release workflow runs the tests and publishes the command-line archives and `checksums.txt` to GitHub Releases, then builds the desktop installers on Windows, macOS and Linux and attaches them with `desktop-checksums.txt`. To build the installers without releasing, run the **Desktop** workflow by hand or open a pull request that touches `desktop/`. The `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` secrets sign the in-app updates: with them, the release also gets the signed update packages and the `latest.json` manifest that installed copies read (the public key is in `desktop/src-tauri/tauri.conf.json`). Without them the installers are still published, but installed copies are not offered the release. When the `TAP_GITHUB_TOKEN` secret is set (a token with write access to the `homebrew-tap` and `scoop-bucket` repositories), it also updates the Homebrew cask and the Scoop manifest. CI builds every archive from the same configuration on each push, without publishing, so release problems show up before tagging.
 
 ### Project layout
 

@@ -101,10 +101,19 @@ jobs:
           ENVRY_VERSION: ${{ inputs.tag }}
           # The sidecar (and web UI) were already built for the tests.
           ENVRY_SKIP_WEB: ${{ matrix.name != 'macos' && '1' || '0' }}
+          # Signs the update packages installed copies download. This is not
+          # code signing: it proves an update was built here.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           args=(${{ matrix.args }})
           if [ -n "$ENVRY_VERSION" ]; then
             args+=(--config "{\"version\":\"${ENVRY_VERSION#v}\"}")
+          fi
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            args+=(--config '{"bundle":{"createUpdaterArtifacts":true}}')
+          elif [ -n "$ENVRY_VERSION" ]; then
+            echo "::warning::TAURI_SIGNING_PRIVATE_KEY is not set, so installed copies will not be offered this release."
           fi
           npx tauri build "${args[@]}"
 
@@ -113,14 +122,26 @@ jobs:
         run: |
           mkdir -p out
           t=desktop/src-tauri/target
+          # put FILE NAME copies a bundle under its release name, with its
+          # update signature when updates are signed.
+          put() {
+            cp "$1" "out/$2"
+            if [ -f "$1.sig" ]; then cp "$1.sig" "out/$2.sig"; fi
+          }
+          first() { echo "$1"; }
           case "${{ matrix.name }}" in
             windows)
-              cp "$t"/release/bundle/nsis/*-setup.exe out/Envry-setup-windows-x64.exe ;;
+              put "$(first "$t"/release/bundle/nsis/*-setup.exe)" Envry-setup-windows-x64.exe ;;
             macos)
-              cp "$t"/universal-apple-darwin/release/bundle/dmg/*.dmg out/Envry-macos-universal.dmg ;;
+              m="$t"/universal-apple-darwin/release/bundle
+              put "$(first "$m"/dmg/*.dmg)" Envry-macos-universal.dmg
+              # Installed copies update from the compressed app, not the dmg.
+              for f in "$m"/macos/*.app.tar.gz; do
+                if [ -f "$f" ]; then put "$f" Envry-macos-universal.app.tar.gz; fi
+              done ;;
             linux)
-              cp "$t"/release/bundle/appimage/*.AppImage out/Envry-linux-x86_64.AppImage
-              cp "$t"/release/bundle/deb/*.deb out/envry-desktop_amd64.deb ;;
+              put "$(first "$t"/release/bundle/appimage/*.AppImage)" Envry-linux-x86_64.AppImage
+              put "$(first "$t"/release/bundle/deb/*.deb)" envry-desktop_amd64.deb ;;
           esac
           ls -la out
 
@@ -143,6 +164,51 @@ jobs:
           pattern: installers-*
           merge-multiple: true
           path: out
+
+      - name: Update manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        # latest.json is what installed copies read to find this release: the
+        # signed update package for each platform, and the release notes.
+        run: |
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body -q .body > notes.md || true
+          python3 - <<'PY'
+          import datetime, json, os, pathlib
+
+          tag = os.environ["TAG"]
+          base = f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/releases/download/{tag}"
+          # Updater targets: {os}-{arch}-{bundle}, with {os}-{arch} as the fallback.
+          packages = {
+              "windows-x86_64": "Envry-setup-windows-x64.exe",
+              "windows-x86_64-nsis": "Envry-setup-windows-x64.exe",
+              "darwin-x86_64": "Envry-macos-universal.app.tar.gz",
+              "darwin-aarch64": "Envry-macos-universal.app.tar.gz",
+              "darwin-x86_64-app": "Envry-macos-universal.app.tar.gz",
+              "darwin-aarch64-app": "Envry-macos-universal.app.tar.gz",
+              "linux-x86_64": "Envry-linux-x86_64.AppImage",
+              "linux-x86_64-appimage": "Envry-linux-x86_64.AppImage",
+              "linux-x86_64-deb": "envry-desktop_amd64.deb",
+          }
+          out = pathlib.Path("out")
+          platforms = {}
+          for target, name in packages.items():
+              sig = out / f"{name}.sig"
+              if sig.exists():
+                  platforms[target] = {"signature": sig.read_text().strip(), "url": f"{base}/{name}"}
+          if not platforms:
+              print("::warning::No signed update packages, so latest.json is not published.")
+          else:
+              notes = pathlib.Path("notes.md")
+              manifest = {
+                  "version": tag.removeprefix("v"),
+                  "notes": notes.read_text().strip() if notes.exists() else "",
+                  "pub_date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                  "platforms": platforms,
+              }
+              (out / "latest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+              print(sorted(platforms))
+          PY
 
       - name: Checksums
         run: cd out && sha256sum * > desktop-checksums.txt && cat desktop-checksums.txt

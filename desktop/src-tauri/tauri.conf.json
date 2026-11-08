@@ -5,7 +5,10 @@
   "identifier": "io.github.arifurrahmanns.envry",
   "build": {
     "frontendDist": "../src",
-    "beforeDevCommand": { "script": "node scripts/sidecar.mjs", "wait": true },
+    "beforeDevCommand": {
+      "script": "node scripts/sidecar.mjs",
+      "wait": true
+    },
     "beforeBuildCommand": "node scripts/sidecar.mjs"
   },
   "app": {
@@ -17,7 +20,13 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis", "app", "dmg", "appimage", "deb"],
+    "targets": [
+      "nsis",
+      "app",
+      "dmg",
+      "appimage",
+      "deb"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -25,7 +34,9 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "externalBin": ["binaries/envry"],
+    "externalBin": [
+      "binaries/envry"
+    ],
     "publisher": "Envry",
     "copyright": "MIT License",
     "category": "DeveloperTool",
@@ -42,6 +53,17 @@
     "macOS": {
       "minimumSystemVersion": "11.0",
       "signingIdentity": "-"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEEyOTkzNUYzNkQyRDk5MEYKUldRUG1TMXQ4eldab2dqN0Qza1FpbWEyM0ZqRmptZWJLOWtiakhTc05TenRjUTFsdmp5T0NqMG0K",
+      "endpoints": [
+        "https://github.com/arifurrahmanns/Envry/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
     }
   }
 }

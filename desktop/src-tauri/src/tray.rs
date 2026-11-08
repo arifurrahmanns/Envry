@@ -10,6 +10,7 @@ use tauri_plugin_autostart::ManagerExt;
 
 use crate::mail::Mail;
 use crate::server::{Phase, Server};
+use crate::update::{self, Status, Updates};
 use crate::{settings, window};
 
 const TRAY_ID: &str = "main";
@@ -22,6 +23,7 @@ pub struct TrayMenu {
     restart: MenuItem<Wry>,
     notifications: CheckMenuItem<Wry>,
     autostart: CheckMenuItem<Wry>,
+    update: MenuItem<Wry>,
 }
 
 #[derive(Clone, Copy)]
@@ -73,6 +75,7 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
         autostart_on,
         None::<&str>,
     )?;
+    let update = MenuItem::with_id(app, "update", "Check for updates…", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit Envry", true, None::<&str>)?;
     let menu = Menu::with_items(
         app,
@@ -88,6 +91,7 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
             &notifications,
             &autostart,
             &PredefinedMenuItem::separator(app)?,
+            &update,
             &quit,
         ],
     )?;
@@ -118,6 +122,7 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
         restart,
         notifications,
         autostart,
+        update,
     });
     refresh(app);
     Ok(())
@@ -152,6 +157,11 @@ fn on_menu(app: &AppHandle, id: &str) {
                 .autostart
                 .set_checked(al.is_enabled().unwrap_or(false));
         }
+        "update" => match app.state::<Updates>().status() {
+            Status::Ready(_) => update::install(app),
+            Status::Idle => update::check_now(app),
+            _ => {}
+        },
         "quit" => app.exit(0),
         _ => {}
     }
@@ -171,11 +181,15 @@ pub fn refresh(app: &AppHandle) {
         Phase::Failed { .. } => ("Offline — stopped with an error".to_string(), Look::Offline),
         Phase::Stopped => ("Offline".to_string(), Look::Offline),
     };
-    let tooltip = match &phase {
+    let update = app.state::<Updates>().status();
+    let mut tooltip = match &phase {
         Phase::Running { .. } if new > 0 => format!("Envry — Live · {new} new"),
         Phase::Running { .. } => "Envry — Live".to_string(),
         _ => format!("Envry — {}", status.trim_start_matches("● ")),
     };
+    if let Status::Ready(version) = &update {
+        tooltip.push_str(&format!(" · Update {version} ready"));
+    }
 
     if let Some(tray) = app.tray_by_id(TRAY_ID) {
         let _ = tray.set_icon_with_as_template(Some(icon(look)), cfg!(target_os = "macos"));
@@ -195,6 +209,15 @@ pub fn refresh(app: &AppHandle) {
             .toggle
             .set_text(if busy { "Stop server" } else { "Start server" });
         let _ = m.restart.set_enabled(running);
+        let (text, enabled) = match &update {
+            Status::Idle => ("Check for updates…".to_string(), true),
+            Status::Checking => ("Checking for updates…".to_string(), false),
+            Status::Downloading(v) => (format!("Downloading Envry {v}…"), false),
+            Status::Ready(v) => (format!("Restart to update to {v}"), true),
+            Status::Installing(v) => (format!("Installing Envry {v}…"), false),
+        };
+        let _ = m.update.set_text(text);
+        let _ = m.update.set_enabled(enabled);
     }
     window::set_badge(app, new);
 }

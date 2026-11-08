@@ -6,6 +6,7 @@ mod mail;
 mod server;
 mod settings;
 mod tray;
+mod update;
 mod window;
 
 use std::fs;
@@ -82,8 +83,10 @@ pub fn run() {
                 )
                 .build(),
         )
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(Server::default())
         .manage(mail)
+        .manage(update::Updates::default())
         .invoke_handler(tauri::generate_handler![
             commands::get_status,
             commands::start_server,
@@ -112,12 +115,16 @@ pub fn run() {
                 if a.action_id() != "tap" {
                     return;
                 }
-                let target = a
-                    .notification()
-                    .and_then(|n| on_tap.state::<Mail>().target(n.id()));
+                let id = a.notification().map(|n| n.id());
+                if id == Some(update::NOTIFICATION_ID) {
+                    update::install(&on_tap);
+                    return;
+                }
+                let target = id.and_then(|id| on_tap.state::<Mail>().target(id));
                 window::open_message(&on_tap, target.flatten());
             })?;
             tauri::async_runtime::spawn(mail::notifier(handle.clone(), queue));
+            update::start(&handle);
 
             app.state::<Server>().start(&handle, ports);
             Ok(())
