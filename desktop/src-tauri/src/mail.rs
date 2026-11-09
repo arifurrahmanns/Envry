@@ -185,7 +185,17 @@ pub async fn notifier(app: AppHandle, mut rx: mpsc::UnboundedReceiver<Summary>) 
         }
         if batch.len() <= SHOW_SINGLY {
             for s in &batch {
-                notify(&app, &title_for(s), &body_for(s), Some(s.id.clone()));
+                // A verification email shows its code right in the
+                // notification, so it can be typed without opening Envry.
+                match code_of(&app, &s.id).await {
+                    Some(code) => notify(
+                        &app,
+                        &format!("Code {code}"),
+                        &code_body(s),
+                        Some(s.id.clone()),
+                    ),
+                    None => notify(&app, &title_for(s), &body_for(s), Some(s.id.clone())),
+                }
             }
         } else {
             let last = batch.last().unwrap();
@@ -217,6 +227,40 @@ fn body_for(s: &Summary) -> String {
     }
 }
 
+/// The body under a "Code 482913" title: who sent it, and what about.
+fn code_body(s: &Summary) -> String {
+    format!("{} · {}", title_for(s), subject(s))
+}
+
+/// The best one-time code Envry found in a message, if any.
+async fn code_of(app: &AppHandle, id: &str) -> Option<String> {
+    let Phase::Running { ports, .. } = app.state::<Server>().phase() else {
+        return None;
+    };
+    let path = format!("/api/v1/messages/{id}/extracts");
+    let body = tauri::async_runtime::spawn_blocking(move || {
+        crate::server::ports::http_get(ports.http, &path)
+    })
+    .await
+    .ok()?
+    .ok()?;
+    first_code(&body)
+}
+
+/// The first code in a GET /api/v1/messages/{id}/extracts response.
+fn first_code(json: &str) -> Option<String> {
+    #[derive(Deserialize)]
+    struct Extracts {
+        codes: Vec<Code>,
+    }
+    #[derive(Deserialize)]
+    struct Code {
+        value: String,
+    }
+    let x: Extracts = serde_json::from_str(json).ok()?;
+    x.codes.into_iter().next().map(|c| c.value)
+}
+
 pub fn notify(app: &AppHandle, title: &str, body: &str, message: Option<String>) {
     let id = app.state::<Mail>().remember(message);
     let _ = app
@@ -242,5 +286,14 @@ mod tests {
         let s: Summary = serde_json::from_value(ev.data).unwrap();
         assert_eq!(title_for(&s), "app@example.test");
         assert_eq!(body_for(&s), "(no subject)\nTo ada@example.test");
+        assert_eq!(code_body(&s), "app@example.test · (no subject)");
+    }
+
+    #[test]
+    fn reads_the_first_code() {
+        let json = r#"{"codes":[{"value":"482913","context":"Your code is:"},{"value":"Q7X-B2M","context":""}],"links":[]}"#;
+        assert_eq!(first_code(json).as_deref(), Some("482913"));
+        assert_eq!(first_code(r#"{"codes":[],"links":[]}"#), None);
+        assert_eq!(first_code("404 page not found"), None);
     }
 }

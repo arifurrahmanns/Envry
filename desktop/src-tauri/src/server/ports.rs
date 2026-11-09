@@ -111,7 +111,10 @@ fn identify_http(port: u16) -> Option<&'static str> {
     }
 }
 
-fn http_get(port: u16, path: &str) -> io::Result<String> {
+/// GETs a path from the HTTP server on 127.0.0.1:port and returns the
+/// response body (status not checked). Short timeouts: it only ever talks
+/// to a local server.
+pub(crate) fn http_get(port: u16, path: &str) -> io::Result<String> {
     let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
     let mut s = TcpStream::connect_timeout(&addr, Duration::from_millis(500))?;
     s.set_read_timeout(Some(Duration::from_secs(1)))?;

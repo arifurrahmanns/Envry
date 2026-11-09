@@ -5,7 +5,7 @@
 //! therefore closes stdin, and if this app dies the pipe closes on its own,
 //! so the server never outlives the app.
 
-mod ports;
+pub(crate) mod ports;
 
 use std::collections::VecDeque;
 use std::fs::{File, OpenOptions};
