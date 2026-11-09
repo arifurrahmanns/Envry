@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/arifurrahmanns/envry/internal/checks"
+	"github.com/arifurrahmanns/envry/internal/extract"
 	"github.com/arifurrahmanns/envry/internal/mimeparse"
 )
 
@@ -41,15 +42,35 @@ func (s *Server) handleCheckLinks(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) checkReport(w http.ResponseWriter, r *http.Request) (checks.Report, bool) {
+	p, raw, ok := s.parsedMessage(w, r)
+	if !ok {
+		return checks.Report{}, false
+	}
+	return checks.Run(p, len(raw)), true
+}
+
+// handleExtracts returns the message's one-time codes and action links
+// (verify, reset, sign-in, invitation), best match first.
+func (s *Server) handleExtracts(w http.ResponseWriter, r *http.Request) {
+	p, _, ok := s.parsedMessage(w, r)
+	if !ok {
+		return
+	}
+	writeJSON(w, http.StatusOK, extract.Find(p))
+}
+
+// parsedMessage parses the stored message named by the {id} route
+// parameter, writing the error response when it cannot.
+func (s *Server) parsedMessage(w http.ResponseWriter, r *http.Request) (*mimeparse.Message, []byte, bool) {
 	raw, err := s.store.Raw(r.Context(), param(r, "id"))
 	if err != nil {
 		s.storeError(w, err, "message")
-		return checks.Report{}, false
+		return nil, nil, false
 	}
 	p, err := mimeparse.Parse(raw)
 	if err != nil {
 		writeError(w, http.StatusUnprocessableEntity, "message could not be parsed: "+err.Error())
-		return checks.Report{}, false
+		return nil, nil, false
 	}
-	return checks.Run(p, len(raw)), true
+	return p, raw, true
 }

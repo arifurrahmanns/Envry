@@ -4,6 +4,7 @@ import { toast } from 'sonner'
 
 import { urls, type MessageSummary } from '@/lib/api'
 import { displayName } from '@/lib/format'
+import { extractsQuery } from '@/lib/queries'
 
 type LiveEvent =
   | { type: 'message.created'; data: MessageSummary }
@@ -38,14 +39,37 @@ export function useLiveEvents(onOpenMessage: (id: string) => void): LiveStatus {
       void qc.invalidateQueries({ queryKey: ['mailboxes'] })
     }
 
+    // A toast per new message. When it carries a one-time code, the toast
+    // shows it with a Copy button, so a sign-up flow needs no detour.
+    const notifyNew = (m: MessageSummary) => {
+      const open = { label: 'Open', onClick: () => openRef.current(m.id) }
+      const show = (code?: string) => {
+        const subject = m.subject || '(no subject)'
+        if (!code) {
+          toast(displayName(m.from), { description: subject, action: open })
+          return
+        }
+        toast(`Code ${code}`, {
+          description: `${displayName(m.from)} · ${subject}`,
+          action: {
+            label: 'Copy code',
+            onClick: () =>
+              void navigator.clipboard.writeText(code).then(() => toast.success(`Copied ${code}`, { duration: 1500 })),
+          },
+          cancel: open,
+        })
+      }
+      qc.fetchQuery(extractsQuery(m.id)).then(
+        (x) => show(x.codes[0]?.value),
+        () => show(),
+      )
+    }
+
     const handle = (ev: LiveEvent) => {
       switch (ev.type) {
         case 'message.created':
           invalidateMail()
-          toast(displayName(ev.data.from), {
-            description: ev.data.subject || '(no subject)',
-            action: { label: 'Open', onClick: () => openRef.current(ev.data.id) },
-          })
+          notifyNew(ev.data)
           break
         case 'message.deleted':
           qc.removeQueries({ queryKey: ['message', ev.data.id] })

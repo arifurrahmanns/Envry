@@ -97,6 +97,7 @@ func (s *Server) Routes() http.Handler {
 		r.Get("/messages/{id}/attachments/{aid}", s.handleAttachment)
 		r.Get("/messages/{id}/checks", s.handleChecks)
 		r.Post("/messages/{id}/checks/links", s.handleCheckLinks)
+		r.Get("/messages/{id}/extracts", s.handleExtracts)
 
 		r.Get("/mailboxes", s.handleListMailboxes)
 		r.Get("/mailboxes/{address}", s.handleGetMailbox)

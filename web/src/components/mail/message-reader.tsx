@@ -25,6 +25,7 @@ import {
   type PreviewWidth,
 } from '@/components/mail/html-preview'
 import { ChecksSection } from '@/components/mail/message-checks'
+import { ExtractChips } from '@/components/mail/message-extracts'
 import { Section } from '@/components/mail/section'
 import { SenderAvatar } from '@/components/mail/sender-avatar'
 import { Button } from '@/components/ui/button'
@@ -152,6 +153,7 @@ function ReaderContent({
             </span>
           ))}
         </div>
+        <ExtractChips messageId={m.id} />
 
         <Divider />
         <MessageBody message={m} />

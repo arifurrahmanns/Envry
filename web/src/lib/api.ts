@@ -124,6 +124,17 @@ export type MessageLink = { url: string; text: string }
 
 export type MessageChecks = { checks: Check[]; links: MessageLink[] }
 
+/** A one-time code found in a message, with the sentence that names it. */
+export type ExtractedCode = { value: string; context: string }
+
+export type ActionLinkKind = 'verify' | 'reset' | 'login' | 'invite'
+
+/** A link that verifies an address, resets a password, signs in or accepts an invitation. */
+export type ActionLink = { url: string; kind: ActionLinkKind; text: string }
+
+/** What a verification or sign-in email is opened for, best match first. */
+export type MessageExtracts = { codes: ExtractedCode[]; links: ActionLink[] }
+
 export type LinkResult = {
   url: string
   /** Final HTTP status after redirects; 0 when the request failed. */
@@ -208,6 +219,7 @@ export const api = {
   message: (id: string) => request<MessageDetail>(`/messages/${enc(id)}`),
   rawSource: (id: string) => request<string>(`/messages/${enc(id)}/raw`),
   checks: (id: string) => request<MessageChecks>(`/messages/${enc(id)}/checks`),
+  extracts: (id: string) => request<MessageExtracts>(`/messages/${enc(id)}/extracts`),
   /** Requests the message's links from the server; only runs when the user asks. */
   checkLinks: (id: string) =>
     request<LinkResults>(`/messages/${enc(id)}/checks/links`, { method: 'POST', body: '{}' }),

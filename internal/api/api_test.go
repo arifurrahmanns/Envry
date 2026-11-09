@@ -439,6 +439,42 @@ func TestChecks(t *testing.T) {
 	e.json("POST", "/api/v1/messages/nope/checks/links", map[string]any{}, 404, nil)
 }
 
+func TestExtracts(t *testing.T) {
+	e := newEnv(t)
+	id := e.ingest("From: app@example.test\r\nTo: dev@test.local\r\nSubject: 482913 is your verification code\r\n"+
+		"Content-Type: text/html; charset=utf-8\r\n\r\n"+
+		`<p>Enter this code:</p><p>482913</p>`+
+		`<p><a href="http://localhost:3000/verify?token=8f2c5e1d7a9b3c4f6e0d2a1b">Verify email</a></p>`+"\r\n", "dev@test.local")
+
+	var got struct {
+		Codes []struct {
+			Value   string `json:"value"`
+			Context string `json:"context"`
+		} `json:"codes"`
+		Links []struct {
+			URL  string `json:"url"`
+			Kind string `json:"kind"`
+			Text string `json:"text"`
+		} `json:"links"`
+	}
+	e.json("GET", "/api/v1/messages/"+id+"/extracts", nil, 200, &got)
+	if len(got.Codes) != 1 || got.Codes[0].Value != "482913" || got.Codes[0].Context == "" {
+		t.Errorf("codes = %+v", got.Codes)
+	}
+	if len(got.Links) != 1 || got.Links[0].Kind != "verify" || got.Links[0].Text != "Verify email" ||
+		got.Links[0].URL != "http://localhost:3000/verify?token=8f2c5e1d7a9b3c4f6e0d2a1b" {
+		t.Errorf("links = %+v", got.Links)
+	}
+
+	// Nothing found is two empty lists, not null.
+	plain := e.ingest("From: a@example.test\r\nTo: dev@test.local\r\nSubject: Hi\r\n\r\nHello there.\r\n", "dev@test.local")
+	_, b := e.do("GET", "/api/v1/messages/"+plain+"/extracts", nil)
+	if strings.TrimSpace(string(b)) != `{"codes":[],"links":[]}` {
+		t.Errorf("empty extracts = %s", b)
+	}
+	e.json("GET", "/api/v1/messages/nope/extracts", nil, 404, nil)
+}
+
 func TestInfoFailureSimulation(t *testing.T) {
 	e := newEnv(t)
 	_, b := e.do("GET", "/api/v1/info", nil)

@@ -31,6 +31,7 @@
 - **A mail-client interface**: Sent, Receivers and Inbox views, a reader with preview, text, source and header views, resizable panes, a composer for test emails, and light and dark themes that follow your system.
 - **Clear port conflicts.** If Mailpit or another Envry already uses a port, Envry names the program holding it and can move to other ports in one click.
 - **Encrypted connections when you need them.** One switch adds STARTTLS and SSL/TLS ports, and **Trust certificate** lets apps that check certificates connect without changes.
+- **Codes and links at a glance.** Verification codes and sign-in, verify, reset and invite links appear as one-click copy chips above the message and in the new-mail notice, so testing a sign-up flow needs no scrolling.
 - **Message checks** for a missing plain-text part, images without alt text, Gmail clipping, broken links and spam-prone headers.
 - **Failure simulation** to test how your application handles rejected recipients, temporary errors and slow servers.
 - **REST API and live events** so automated tests can wait for and assert on emails.
@@ -167,6 +168,19 @@ envry send --to dev@test.local --cc qa@test.local --bcc audit@test.local \
 
 It uses the `--smtp` address (or `ENVRY_SMTP`), so it finds a server started with the same settings. With `--user` and `--password` it signs in with SMTP AUTH; when the user is an account, a copy is also filed in its Sent folder.
 
+## Codes and links
+
+When a message contains a one-time code (`482913`, `123 456`, `Q7X-B2M`) or an action link, the reader shows it as a chip with a copy button under the header, and the new-mail notice offers **Copy code**. Links are recognised as **verify**, **reset**, **sign-in** (magic links) or **invite** links by their text and URL, and only when they carry a token or say what they do; unsubscribe and preference links are ignored. Prices, phone numbers, dates, order numbers and discount codes are not mistaken for codes.
+
+Tests can read the same results from `GET /api/v1/messages/{id}/extracts`:
+
+```json
+{
+  "codes": [{ "value": "482913", "context": "Enter the following verification code when prompted:" }],
+  "links": [{ "url": "http://localhost:3000/verify?token=…", "kind": "verify", "text": "Verify email" }]
+}
+```
+
 ## Message checks
 
 The reader's **Checks** section reviews every message for problems that affect how it renders or whether it reaches the inbox:
@@ -259,6 +273,7 @@ All endpoints live under `/api/v1` and return JSON. Lists are newest first and p
 | `GET` | `/messages/{id}/attachments/{aid}` | Attachment download |
 | `GET` | `/messages/{id}/checks` | Message checks and the list of links; makes no network requests |
 | `POST` | `/messages/{id}/checks/links` | Request the message's links and return each status code |
+| `GET` | `/messages/{id}/extracts` | One-time codes and verify, reset, sign-in and invite links, best match first |
 | `DELETE` | `/messages/{id}`, `/messages` | Delete one message, or all of them |
 | `GET` | `/mailboxes` | Recipient mailboxes with folders, totals and unread counts |
 | `GET` | `/mailboxes/{address}/messages` | One mailbox folder (`?folder=INBOX`) |
@@ -335,6 +350,7 @@ internal/
   app/              Wires the servers together and runs them
   checks/           Message checks and the on-demand link checker
   compose/          Builds outgoing messages for the API and envry send
+  extract/          Finds one-time codes and action links in a message
   config/           Flags and ENVRY_* environment variables
   events/           In-process publish/subscribe bus
   imapd/            IMAP server (go-imap v2) kept in sync through the event bus

@@ -25,6 +25,7 @@ export const keys = {
   message: (id: string) => ['message', id] as const,
   raw: (id: string) => ['message', id, 'raw'] as const,
   checks: (id: string) => ['message', id, 'checks'] as const,
+  extracts: (id: string) => ['message', id, 'extracts'] as const,
   mailboxes: ['mailboxes'] as const,
   mailboxMessages: (address: string, folder: string, q = '') =>
     ['mailbox-messages', address, folder, { q }] as const,
@@ -68,6 +69,17 @@ export function useRawSource(id: string, enabled: boolean) {
 /** Static checks; a stored message never changes, so they never go stale. */
 export function useMessageChecks(id: string) {
   return useQuery({ queryKey: keys.checks(id), queryFn: () => api.checks(id), staleTime: Infinity })
+}
+
+/** One-time codes and action links; like checks, they never go stale. */
+export const extractsQuery = (id: string) => ({
+  queryKey: keys.extracts(id),
+  queryFn: () => api.extracts(id),
+  staleTime: Infinity,
+})
+
+export function useMessageExtracts(id: string) {
+  return useQuery(extractsQuery(id))
 }
 
 export function useCheckLinks(id: string) {
