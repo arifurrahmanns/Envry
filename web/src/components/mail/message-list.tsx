@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Download, Ellipsis, Funnel, Loader2, Mail, MailOpen, Paperclip, RotateCw, Trash2 } from 'lucide-react'
+import { ChevronRight, Download, Ellipsis, Funnel, Loader2, Mail, MailOpen, Paperclip, RotateCw, Trash2 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
 import { SenderAvatar } from '@/components/mail/sender-avatar'
@@ -198,11 +198,7 @@ function MessageRow({
 }) {
   const delivery = isDelivery(item) ? item : null
   const unread = delivery !== null && !delivery.seen
-  const recipients = [...item.to, ...item.cc]
-  const name =
-    mode === 'sent' && recipients.length > 0
-      ? `${displayName(item.from)} → ${displayName(recipients[0])}${recipients.length > 1 ? ` +${recipients.length - 1}` : ''}`
-      : displayName(item.from)
+  const recipients = mode === 'sent' ? [...item.to, ...item.cc] : []
 
   return (
     <li
@@ -218,7 +214,7 @@ function MessageRow({
       <SenderAvatar name={item.from.name} address={item.from.address} size="md" />
       <div className="min-w-0 flex-1">
         <div className="flex h-6 items-center gap-2">
-          <span className="truncate text-[14px] font-semibold">{name}</span>
+          <RowName from={displayName(item.from)} recipients={recipients.map(displayName)} />
           {item.attachmentCount > 0 && (
             <Paperclip className="size-3.5 shrink-0 text-muted-foreground" aria-label="Has attachments" />
           )}
@@ -256,6 +252,29 @@ function MessageRow({
         </p>
       </div>
     </li>
+  )
+}
+
+/**
+ * The row's title: the sender, and in Sent who it went to. The recipient is
+ * lighter than the sender, after a small chevron, with "+2" for the rest.
+ */
+function RowName({ from, recipients }: { from: string; recipients: string[] }) {
+  if (recipients.length === 0) {
+    return <span className="truncate text-[14px] font-semibold">{from}</span>
+  }
+  return (
+    <span className="flex min-w-0 items-center gap-1 text-[14px]">
+      {/* The sender keeps up to 60% of the width; the recipient is cut first. */}
+      <span className="max-w-[60%] shrink-0 truncate font-semibold">{from}</span>
+      <ChevronRight aria-label="to" className="size-3.5 shrink-0 text-muted-foreground/60" />
+      <span className="truncate text-foreground/70">{recipients[0]}</span>
+      {recipients.length > 1 && (
+        <span className="shrink-0 rounded-full bg-muted px-1.5 text-[11px] leading-[18px] font-medium text-muted-foreground tabular-nums">
+          +{recipients.length - 1}
+        </span>
+      )}
+    </span>
   )
 }
 
