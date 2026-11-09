@@ -13,11 +13,14 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math/rand/v2"
 	"net"
 	"net/http"
 	"net/mail"
+	"path"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -43,6 +46,7 @@ type Server struct {
 	log      *slog.Logger
 	maxSize  int64
 	webhooks *Webhooks
+	failures Failures
 }
 
 // New returns the emulator. maxSize caps a request body, as SMTP caps a
@@ -58,18 +62,36 @@ func New(st *store.Store, log *slog.Logger, maxSize int64) *Server {
 // under its own prefix, at the provider's own paths.
 func (s *Server) Routes() http.Handler {
 	r := chi.NewRouter()
-	r.Use(func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			r.Body = http.MaxBytesReader(w, r.Body, s.maxSize)
-			next.ServeHTTP(w, r)
-		})
-	})
+	r.Use(s.limitBody)
 	r.Route("/resend", s.resendRoutes)
 	r.Route("/sendgrid", s.sendgridRoutes)
 	r.Route("/postmark", s.postmarkRoutes)
 	r.Route("/mailgun", s.mailgunRoutes)
 	r.Route("/ses", s.sesRoutes)
 	return r
+}
+
+// RootRoutes answers the same APIs at the providers' own paths from the
+// server root (POST /email, /v3/{domain}/messages...), for SDKs that keep
+// only the host of a base URL, such as postmarker and mailgun-php. They
+// are POST routes on paths the web UI does not use. SES's query API stays
+// under /emulate/ses: it posts to "/", the web UI's own page.
+func (s *Server) RootRoutes(r chi.Router) {
+	r.Group(func(r chi.Router) {
+		r.Use(s.limitBody)
+		s.resendRoutes(r)
+		s.sendgridRoutes(r)
+		s.postmarkRoutes(r)
+		s.mailgunRoutes(r)
+		r.Post("/v2/email/outbound-emails", s.sesV2Send)
+	})
+}
+
+func (s *Server) limitBody(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, s.maxSize)
+		next.ServeHTTP(w, r)
+	})
 }
 
 // deliver builds a message and captures it as sent through provider.
@@ -149,6 +171,31 @@ func addresses(field string, list []string) ([]*mail.Address, error) {
 		out = append(out, parsed...)
 	}
 	return out, nil
+}
+
+// headerMap is a headers field: an object of names to values, or a list of
+// {"name","value"} objects; an empty array (as PHP encodes an empty map)
+// means no headers.
+type headerMap map[string]string
+
+func (h *headerMap) UnmarshalJSON(b []byte) error {
+	var obj map[string]string
+	if err := json.Unmarshal(b, &obj); err == nil {
+		*h = obj
+		return nil
+	}
+	var list []struct {
+		Name  string `json:"name"`
+		Value string `json:"value"`
+	}
+	if err := json.Unmarshal(b, &list); err != nil {
+		return errors.New("headers must be an object of header names to values")
+	}
+	*h = headerMap{}
+	for _, x := range list {
+		(*h)[x.Name] = x.Value
+	}
+	return nil
 }
 
 // stringList is a JSON field that may be one string or an array of them.
@@ -259,4 +306,101 @@ func templateNote(provider, template string, data any) string {
 		note += "\n\nTemplate data:\n" + string(b)
 	}
 	return note
+}
+
+// Failures is Envry's failure simulation (--smtp-reject-rcpt,
+// --smtp-reject-rate, --smtp-latency), applied to provider API requests
+// as well, so an app's error handling can be tested whichever way it
+// sends.
+type Failures struct {
+	// RejectRecipients are lower-cased address patterns ("*" wildcards):
+	// a request to any of them gets the provider's "recipient refused" error.
+	RejectRecipients []string
+	// RejectRate is the percentage (0-100) of requests answered with the
+	// provider's rate-limit error, a temporary failure apps should retry.
+	RejectRate int
+	// Latency delays every answer.
+	Latency time.Duration
+	// Roll returns a number in [0, 100) for RejectRate; tests replace it.
+	Roll func() int
+}
+
+// SetFailures turns on failure simulation. Call before serving.
+func (s *Server) SetFailures(f Failures) {
+	if f.Roll == nil {
+		f.Roll = func() int { return rand.IntN(100) }
+	}
+	s.failures = f
+}
+
+// errRejected is a recipient refused by failure simulation.
+type errRejected struct{ address string }
+
+func (e errRejected) Error() string {
+	return fmt.Sprintf("%s was refused by Envry's failure simulation.", e.address)
+}
+
+// errThrottled is a request refused as rate limited by failure simulation.
+type errThrottled struct{}
+
+func (errThrottled) Error() string {
+	return "Too many requests: Envry's failure simulation refused this request. Try again."
+}
+
+// simulate applies failure simulation to a request for these recipients,
+// before anything is captured: the delay, a refused recipient, then the
+// rate limit.
+func (s *Server) simulate(ctx context.Context, rcpts []string) error {
+	if err := s.delay(ctx); err != nil {
+		return err
+	}
+	if err := s.refused(rcpts); err != nil {
+		return err
+	}
+	return s.throttled()
+}
+
+// delay waits for the simulated latency.
+func (s *Server) delay(ctx context.Context) error {
+	if d := s.failures.Latency; d > 0 {
+		select {
+		case <-time.After(d):
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	return nil
+}
+
+// refused returns errRejected for the first recipient that failure
+// simulation refuses.
+func (s *Server) refused(rcpts []string) error {
+	for _, rc := range rcpts {
+		addr := store.NormalizeAddress(rc)
+		for _, pattern := range s.failures.RejectRecipients {
+			if ok, _ := path.Match(pattern, addr); ok {
+				s.log.Debug("recipient refused by failure simulation", "rcpt", addr, "pattern", pattern)
+				return errRejected{addr}
+			}
+		}
+	}
+	return nil
+}
+
+// throttled returns errThrottled for the simulated share of requests.
+func (s *Server) throttled() error {
+	if rate := s.failures.RejectRate; rate > 0 && s.failures.Roll() < rate {
+		s.log.Debug("request refused by failure simulation", "rate", rate)
+		return errThrottled{}
+	}
+	return nil
+}
+
+// recipients lists every message's envelope recipients.
+func recipients(msgs ...compose.Message) []string {
+	var out []string
+	for _, m := range msgs {
+		out = append(out, m.Recipients()...)
+	}
+	return out
 }

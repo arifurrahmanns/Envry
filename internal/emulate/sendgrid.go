@@ -1,6 +1,7 @@
 package emulate
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"net/mail"
@@ -63,6 +64,10 @@ func (s *Server) sendgridRoutes(r chi.Router) {
 			return
 		}
 		msgs, metas, field, err := sendgridMessages(req)
+		if err == nil {
+			field = "personalizations"
+			err = s.simulate(r.Context(), recipients(msgs...))
+		}
 		if err != nil {
 			s.sendgridError(w, err, field)
 			return
@@ -203,6 +208,20 @@ func sgFormat(a sgAddress) string {
 
 // sendgridError answers like SendGrid: {"errors":[{"message","field","help"}]}.
 func (s *Server) sendgridError(w http.ResponseWriter, err error, field string) {
+	var rejected errRejected
+	switch {
+	case errors.As(err, &rejected):
+		writeJSON(w, http.StatusBadRequest, map[string]any{
+			"errors": []map[string]any{{"message": err.Error(), "field": field, "help": nil}},
+		})
+		return
+	case errors.As(err, new(errThrottled)):
+		w.Header().Set("Retry-After", "1")
+		writeJSON(w, http.StatusTooManyRequests, map[string]any{
+			"errors": []map[string]any{{"message": "too many requests", "field": nil, "help": nil}},
+		})
+		return
+	}
 	if isInvalid(err) {
 		var f any
 		if field != "" {

@@ -1,6 +1,7 @@
 package emulate
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -52,8 +53,17 @@ type pmResult struct {
 	Message     string `json:"Message"`
 }
 
-// Postmark's error code for an invalid email request.
-const pmInvalidEmail = 300
+// Postmark's error codes: an invalid email request, and recipients marked
+// inactive (after a hard bounce or spam complaint).
+const (
+	pmInvalidEmail      = 300
+	pmInactiveRecipient = 406
+)
+
+func pmInactiveMessage(e errRejected) string {
+	return "You tried to send to recipient(s) that have been marked as inactive. Found inactive addresses: " +
+		e.address + ". (Envry failure simulation.)"
+}
 
 func (s *Server) postmarkRoutes(r chi.Router) {
 	single := func(withTemplate bool) http.HandlerFunc {
@@ -63,7 +73,7 @@ func (s *Server) postmarkRoutes(r chi.Router) {
 				s.postmarkError(w, err)
 				return
 			}
-			res, err := s.postmarkSend(r, req, withTemplate)
+			res, err := s.postmarkSend(r, req, withTemplate, false)
 			if err != nil {
 				s.postmarkError(w, err)
 				return
@@ -89,16 +99,29 @@ func (s *Server) postmarkRoutes(r chi.Router) {
 				s.postmarkError(w, err)
 				return
 			}
-			// Each message succeeds or fails on its own, as in Postmark.
+			// A rate limit refuses the whole batch; otherwise each message
+			// succeeds or fails on its own, as in Postmark.
+			if err := s.delay(r.Context()); err != nil {
+				s.postmarkError(w, err)
+				return
+			}
+			if err := s.throttled(); err != nil {
+				s.postmarkError(w, err)
+				return
+			}
 			out := []pmResult{}
 			for _, e := range req {
-				res, err := s.postmarkSend(r, e, withTemplate)
-				if err != nil {
-					if !isInvalid(err) {
-						s.postmarkError(w, err)
-						return
-					}
+				res, err := s.postmarkSend(r, e, withTemplate, true)
+				var rejected errRejected
+				switch {
+				case err == nil:
+				case errors.As(err, &rejected):
+					res = pmResult{ErrorCode: pmInactiveRecipient, Message: pmInactiveMessage(rejected)}
+				case isInvalid(err):
 					res = pmResult{ErrorCode: pmInvalidEmail, Message: err.Error()}
+				default:
+					s.postmarkError(w, err)
+					return
 				}
 				out = append(out, res)
 			}
@@ -109,7 +132,10 @@ func (s *Server) postmarkRoutes(r chi.Router) {
 	r.Post("/email/batchWithTemplates", batch(true))
 }
 
-func (s *Server) postmarkSend(r *http.Request, e pmEmail, withTemplate bool) (pmResult, error) {
+// postmarkSend captures one message. In a batch the delay and rate limit
+// were already applied to the whole request, so only refused recipients
+// are checked here.
+func (s *Server) postmarkSend(r *http.Request, e pmEmail, withTemplate, inBatch bool) (pmResult, error) {
 	if strings.TrimSpace(e.From) == "" {
 		return pmResult{}, invalid("Invalid 'From' address: ''.")
 	}
@@ -165,6 +191,15 @@ func (s *Server) postmarkSend(r *http.Request, e pmEmail, withTemplate bool) (pm
 		})
 	}
 
+	var failure error
+	if inBatch {
+		failure = s.refused(recipients(m))
+	} else {
+		failure = s.simulate(r.Context(), recipients(m))
+	}
+	if failure != nil {
+		return pmResult{}, failure
+	}
 	meta := eventMeta{values: e.Metadata, stream: e.MessageStream}
 	if e.Tag != "" {
 		meta.tags = []string{e.Tag}
@@ -184,6 +219,15 @@ func (s *Server) postmarkSend(r *http.Request, e pmEmail, withTemplate bool) (pm
 
 // postmarkError answers like Postmark: 422 {"ErrorCode":300,"Message":...}.
 func (s *Server) postmarkError(w http.ResponseWriter, err error) {
+	var rejected errRejected
+	switch {
+	case errors.As(err, &rejected):
+		writeJSON(w, http.StatusUnprocessableEntity, pmResult{ErrorCode: pmInactiveRecipient, Message: pmInactiveMessage(rejected)})
+		return
+	case errors.As(err, new(errThrottled)):
+		writeJSON(w, http.StatusTooManyRequests, pmResult{ErrorCode: 0, Message: err.Error()})
+		return
+	}
 	if isInvalid(err) {
 		writeJSON(w, http.StatusUnprocessableEntity, pmResult{ErrorCode: pmInvalidEmail, Message: err.Error()})
 		return

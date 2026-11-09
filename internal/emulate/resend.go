@@ -1,6 +1,7 @@
 package emulate
 
 import (
+	"errors"
 	"net/http"
 	"net/mail"
 	"path"
@@ -22,7 +23,7 @@ type resendEmail struct {
 	Subject     string             `json:"subject"`
 	HTML        string             `json:"html"`
 	Text        string             `json:"text"`
-	Headers     map[string]string  `json:"headers"`
+	Headers     headerMap          `json:"headers"`
 	Attachments []resendAttachment `json:"attachments"`
 	Tags        []struct {
 		Name  string `json:"name"`
@@ -49,7 +50,15 @@ func (s *Server) resendRoutes(r chi.Router) {
 			s.resendError(w, err)
 			return
 		}
-		id, err := s.resendSend(r, req)
+		m, err := resendMessage(req)
+		if err == nil {
+			err = s.simulate(r.Context(), recipients(m))
+		}
+		if err != nil {
+			s.resendError(w, err)
+			return
+		}
+		id, err := s.resendSend(r, req, m)
 		if err != nil {
 			s.resendError(w, err)
 			return
@@ -63,17 +72,24 @@ func (s *Server) resendRoutes(r chi.Router) {
 			return
 		}
 		// Resend checks the whole batch before sending any of it.
-		for _, e := range req {
-			if _, err := resendMessage(e); err != nil {
+		msgs := make([]compose.Message, len(req))
+		for i, e := range req {
+			m, err := resendMessage(e)
+			if err != nil {
 				s.resendError(w, err)
 				return
 			}
+			msgs[i] = m
+		}
+		if err := s.simulate(r.Context(), recipients(msgs...)); err != nil {
+			s.resendError(w, err)
+			return
 		}
 		out := struct {
 			Data []resendID `json:"data"`
 		}{Data: []resendID{}}
-		for _, e := range req {
-			id, err := s.resendSend(r, e)
+		for i, e := range req {
+			id, err := s.resendSend(r, e, msgs[i])
 			if err != nil {
 				s.resendError(w, err)
 				return
@@ -84,11 +100,7 @@ func (s *Server) resendRoutes(r chi.Router) {
 	})
 }
 
-func (s *Server) resendSend(r *http.Request, e resendEmail) (string, error) {
-	m, err := resendMessage(e)
-	if err != nil {
-		return "", err
-	}
+func (s *Server) resendSend(r *http.Request, e resendEmail, m compose.Message) (string, error) {
 	tags := map[string]string{}
 	for _, t := range e.Tags {
 		tags[t.Name] = t.Value
@@ -137,6 +149,20 @@ func resendMessage(e resendEmail) (compose.Message, error) {
 
 // resendError answers like Resend: {"statusCode":422,"name":"validation_error","message":...}.
 func (s *Server) resendError(w http.ResponseWriter, err error) {
+	var rejected errRejected
+	switch {
+	case errors.As(err, &rejected):
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
+			"statusCode": http.StatusUnprocessableEntity, "name": "validation_error", "message": err.Error(),
+		})
+		return
+	case errors.As(err, new(errThrottled)):
+		w.Header().Set("Retry-After", "1")
+		writeJSON(w, http.StatusTooManyRequests, map[string]any{
+			"statusCode": http.StatusTooManyRequests, "name": "rate_limit_exceeded", "message": err.Error(),
+		})
+		return
+	}
 	if isInvalid(err) {
 		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
 			"statusCode": http.StatusUnprocessableEntity, "name": "validation_error", "message": err.Error(),

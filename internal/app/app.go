@@ -125,8 +125,14 @@ func New(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, error
 		RejectRate:       cfg.SMTPRejectRate,
 		Latency:          cfg.SMTPLatency,
 	})
+	// The same failure simulation answers provider API requests.
+	a.emulate.SetFailures(emulate.Failures{
+		RejectRecipients: cfg.SMTPRejectRcpt,
+		RejectRate:       cfg.SMTPRejectRate,
+		Latency:          cfg.SMTPLatency,
+	})
 	if len(cfg.SMTPRejectRcpt) > 0 || cfg.SMTPRejectRate > 0 || cfg.SMTPLatency > 0 {
-		log.Warn("smtp failure simulation enabled", "reject_rcpt", cfg.SMTPRejectRcpt,
+		log.Warn("failure simulation enabled for SMTP and provider APIs", "reject_rcpt", cfg.SMTPRejectRcpt,
 			"reject_rate", cfg.SMTPRejectRate, "latency", cfg.SMTPLatency)
 	}
 	a.pop3 = pop3d.New(st, pop3d.Options{
@@ -191,6 +197,7 @@ func (a *App) routes() http.Handler {
 	// Provider SDKs authenticate with their own API keys, never the UI's
 	// password, so the emulated APIs stay outside it (like SMTP).
 	r.Mount("/emulate", a.emulate.Routes())
+	a.emulate.RootRoutes(r)
 
 	ui := webui.New()
 	if !ui.Built() {

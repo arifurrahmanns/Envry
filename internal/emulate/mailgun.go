@@ -44,6 +44,10 @@ func (s *Server) mailgunMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	meta.domain = chi.URLParam(r, "domain")
+	if err := s.simulate(r.Context(), recipients(msgs...)); err != nil {
+		s.mailgunError(w, err)
+		return
+	}
 	var first string
 	for _, m := range msgs {
 		id, err := s.deliver(r.Context(), r, Mailgun, m, meta)
@@ -90,6 +94,10 @@ func (s *Server) mailgunMIME(w http.ResponseWriter, r *http.Request) {
 	rcpts := make([]string, len(to))
 	for i, a := range to {
 		rcpts[i] = a.Address
+	}
+	if err := s.simulate(r.Context(), rcpts); err != nil {
+		s.mailgunError(w, err)
+		return
 	}
 	id, err := s.capture(r.Context(), r, Mailgun, from, rcpts, raw, eventMeta{domain: chi.URLParam(r, "domain")})
 	if err != nil {
@@ -241,6 +249,15 @@ func readFile(fh *multipart.FileHeader) ([]byte, error) {
 
 // mailgunError answers like Mailgun: 400 {"message": ...}.
 func (s *Server) mailgunError(w http.ResponseWriter, err error) {
+	var rejected errRejected
+	switch {
+	case errors.As(err, &rejected):
+		writeJSON(w, http.StatusBadRequest, map[string]string{"message": err.Error()})
+		return
+	case errors.As(err, new(errThrottled)):
+		writeJSON(w, http.StatusTooManyRequests, map[string]string{"message": err.Error()})
+		return
+	}
 	if isInvalid(err) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"message": err.Error()})
 		return

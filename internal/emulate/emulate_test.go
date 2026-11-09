@@ -23,9 +23,10 @@ import (
 )
 
 type env struct {
-	t     *testing.T
-	store *store.Store
-	srv   *httptest.Server
+	t      *testing.T
+	store  *store.Store
+	srv    *httptest.Server
+	server *Server
 }
 
 func newEnv(t *testing.T) *env {
@@ -34,14 +35,15 @@ func newEnv(t *testing.T) *env {
 	if err != nil {
 		t.Fatal(err)
 	}
+	s := New(st, slog.New(slog.NewTextHandler(io.Discard, nil)), 0)
 	r := chi.NewRouter()
-	r.Mount("/emulate", New(st, slog.New(slog.NewTextHandler(io.Discard, nil)), 0).Routes())
+	r.Mount("/emulate", s.Routes())
 	srv := httptest.NewServer(r)
 	t.Cleanup(func() {
 		srv.Close()
 		st.Close()
 	})
-	return &env{t: t, store: st, srv: srv}
+	return &env{t: t, store: st, srv: srv, server: s}
 }
 
 // post sends body (JSON unless it is already a reader) and returns the
@@ -460,3 +462,21 @@ func TestSESv1(t *testing.T) {
 }
 
 func xmlUnmarshal(b []byte, v any) error { return xml.Unmarshal(b, v) }
+
+// Resend's headers may arrive as an object, as a list of name and value
+// pairs, or (from PHP, with no headers) as an empty array.
+func TestResendHeaderShapes(t *testing.T) {
+	e := newEnv(t)
+	for _, headers := range []any{
+		map[string]string{"X-Ref": "1"},
+		[]map[string]string{{"name": "X-Ref", "value": "1"}},
+		[]any{},
+	} {
+		res, body := e.post("/emulate/resend/emails", "application/json", map[string]any{
+			"from": "a@acme.test", "to": "ada@test.local", "subject": "x", "text": "x", "headers": headers,
+		})
+		if res.StatusCode != 200 {
+			t.Errorf("headers %v: %d %s", headers, res.StatusCode, body)
+		}
+	}
+}

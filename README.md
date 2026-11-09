@@ -195,6 +195,24 @@ What each one accepts:
 - **Amazon SES:** the v2 `SendEmail` call with simple, raw or template content (nodemailer's SES transport included)
   and the v1 `SendEmail` and `SendRawEmail` calls that Laravel's `ses` driver uses.
 
+**Other languages.** The same APIs work from PHP and Python; these were checked against Envry:
+
+| SDK | Point it at Envry with |
+| --- | --- |
+| `resend` (Python) | `resend.api_url = "http://localhost:8025/emulate/resend"` or `RESEND_API_URL` |
+| `resend/resend-php`, Laravel's `resend` mailer | `RESEND_BASE_URL=http://localhost:8025/emulate/resend` |
+| `sendgrid` (Python), `sendgrid/sendgrid` (PHP) | `host` option: `http://localhost:8025/emulate/sendgrid` |
+| `postmarker` (Python) | `root_api_url="http://localhost:8025/"` |
+| `wildbit/postmark-php` | `PostmarkClient::$BASE_URL = 'http://localhost:8025/emulate/postmark'` |
+| `mailgun/mailgun-php` | `Mailgun::create($key, 'http://localhost:8025')` |
+| Mailgun from Python (`requests`) | post to `http://localhost:8025/emulate/mailgun/v3/{domain}/messages` |
+| `boto3` (`ses`, `sesv2`), `aws/aws-sdk-php`, Laravel's `ses` and `ses-v2` mailers | `endpoint_url` / `endpoint`: `http://localhost:8025/emulate/ses` |
+
+Some SDKs keep only the host of the address they are given, so Envry also answers each API at the provider's own
+paths from the server root (`POST /email`, `/v3/{domain}/messages`, `/emails`, `/v3/mail/send`,
+`/v2/email/outbound-emails`). Laravel's `postmark` and `mailgun` mailers cannot be pointed at Envry (Laravel fixes
+Postmark's host, and both always use HTTPS); use `MAIL_MAILER=smtp` with Envry's SMTP port for them in development.
+
 Mail sent with a provider template Envry cannot render shows which template was used and the data it was given.
 Errors come back in each provider's format, for example a missing `from`, so error handling can be tested too. The
 Connection page shows the base URL and SDK setup for each provider.
@@ -264,6 +282,11 @@ envry --smtp-reject-rate 20 --smtp-latency 3s
 - `--smtp-reject-rcpt` refuses matching recipients at `RCPT TO` with `550 5.1.1`. Patterns are case-insensitive and support `*` and `?` wildcards.
 - `--smtp-reject-rate` refuses that percentage of messages with `451 4.3.0` after `DATA`; nothing is stored.
 - `--smtp-latency` waits before answering `DATA`, like a slow or overloaded mail server.
+
+The same settings apply to the [provider APIs](#provider-apis), answered the way each provider would: a refused
+recipient gets Resend's `validation_error`, SendGrid's `400`, Postmark's inactive-recipient error (`406`), Mailgun's
+`400` or SES's `MessageRejected`, and the reject rate becomes each provider's rate-limit error (`429`, or SES's
+`Throttling`), which the AWS SDKs retry on their own. Nothing is captured for a refused request.
 
 The Connection page shows which simulations are active.
 

@@ -95,6 +95,9 @@ func (s *Server) sesV2Send(w http.ResponseWriter, r *http.Request) {
 		id, err = s.sesRaw(r, c.Raw.Data, req.FromEmailAddress, append(append(to, cc...), bcc...), tags)
 	case c.Simple != nil || c.Template != nil:
 		m, merr := sesMessage(req.FromEmailAddress, to, cc, bcc, req.ReplyToAddresses)
+		if merr == nil {
+			merr = s.simulate(r.Context(), recipients(m))
+		}
 		if merr != nil {
 			s.sesV2Error(w, merr)
 			return
@@ -195,6 +198,9 @@ func (s *Server) sesRaw(r *http.Request, raw []byte, from string, rcpts []string
 	if len(envelope) == 0 {
 		return "", invalid("Missing final '@domain'")
 	}
+	if err := s.simulate(r.Context(), envelope); err != nil {
+		return "", err
+	}
 	return s.capture(r.Context(), r, SES, from, envelope, raw, meta)
 }
 
@@ -211,6 +217,17 @@ func headerAddresses(p *mimeparse.Message, name string) []mimeparse.Address {
 // sesV2Error answers like the v2 API: the error type in a header and a
 // JSON message.
 func (s *Server) sesV2Error(w http.ResponseWriter, err error) {
+	var rejected errRejected
+	switch {
+	case errors.As(err, &rejected):
+		w.Header().Set("X-Amzn-Errortype", "MessageRejected")
+		writeJSON(w, http.StatusBadRequest, map[string]string{"message": err.Error()})
+		return
+	case errors.As(err, new(errThrottled)):
+		w.Header().Set("X-Amzn-Errortype", "TooManyRequestsException")
+		writeJSON(w, http.StatusTooManyRequests, map[string]string{"message": err.Error()})
+		return
+	}
 	if isInvalid(err) {
 		w.Header().Set("X-Amzn-Errortype", "BadRequestException")
 		writeJSON(w, http.StatusBadRequest, map[string]string{"message": err.Error()})
@@ -257,6 +274,9 @@ func (s *Server) sesV1(w http.ResponseWriter, r *http.Request) {
 		var m compose.Message
 		m, err = sesMessage(f.Get("Source"), members("Destination.ToAddresses"), members("Destination.CcAddresses"),
 			members("Destination.BccAddresses"), members("ReplyToAddresses"))
+		if err == nil {
+			err = s.simulate(r.Context(), recipients(m))
+		}
 		if err != nil {
 			break
 		}
@@ -316,7 +336,13 @@ func (e errUnsupportedAction) Error() string {
 func (s *Server) sesV1Error(w http.ResponseWriter, err error) {
 	code, status := "InvalidParameterValue", http.StatusBadRequest
 	var unsupported errUnsupportedAction
+	var rejected errRejected
 	switch {
+	case errors.As(err, &rejected):
+		code = "MessageRejected"
+	case errors.As(err, new(errThrottled)):
+		// SES's query API reports throttling as a 400 the SDKs retry.
+		code = "Throttling"
 	case errors.As(err, &unsupported):
 		code = "InvalidAction"
 	case !isInvalid(err):

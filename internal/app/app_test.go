@@ -323,3 +323,41 @@ func TestTLSDir(t *testing.T) {
 		t.Errorf("tlsDir = %q, want %q", got, want)
 	}
 }
+
+// Provider APIs answer under /emulate and at the providers' own paths
+// from the root, without the UI's password (SDKs send their own keys),
+// while the web UI and REST API keep theirs and still load.
+func TestProviderAPIRoutes(t *testing.T) {
+	cfg := testConfig()
+	cfg.UIAuth = &config.BasicAuth{User: "admin", Password: "s3cret"}
+	base := "http://" + start(t, cfg).HTTP
+
+	post := func(path, contentType, body string) int {
+		t.Helper()
+		res, err := http.Post(base+path, contentType, strings.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		res.Body.Close()
+		return res.StatusCode
+	}
+	postmark := `{"From":"a@acme.test","To":"ada@test.local","Subject":"x","TextBody":"x"}`
+	mailgun := "from=a%40acme.test&to=ada%40test.local&subject=x&text=x"
+	for path, code := range map[string]int{
+		"/emulate/postmark/email": post("/emulate/postmark/email", "application/json", postmark),
+		"/email":                  post("/email", "application/json", postmark),
+		"/v3/mg.test/messages":    post("/v3/mg.test/messages", "application/x-www-form-urlencoded", mailgun),
+	} {
+		if code != http.StatusOK {
+			t.Errorf("POST %s: %d", path, code)
+		}
+	}
+	for _, p := range []string{"/", "/connection", "/api/v1/info"} {
+		if res, _ := get(t, base+p, func(r *http.Request) { r.SetBasicAuth("admin", "s3cret") }); res.StatusCode != http.StatusOK {
+			t.Errorf("GET %s: %d", p, res.StatusCode)
+		}
+		if res, _ := get(t, base+p, nil); res.StatusCode != http.StatusUnauthorized {
+			t.Errorf("GET %s without creds: %d", p, res.StatusCode)
+		}
+	}
+}

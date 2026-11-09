@@ -62,7 +62,7 @@ func newWebhookEnv(t *testing.T) *webhookEnv {
 		time.Sleep(50 * time.Millisecond) // let late events finish before the store closes
 		st.Close()
 	})
-	return &webhookEnv{env: &env{t: t, store: st, srv: srv}, server: s, calls: calls, url: app.URL + "/webhooks"}
+	return &webhookEnv{env: &env{t: t, store: st, srv: srv, server: s}, server: s, calls: calls, url: app.URL + "/webhooks"}
 }
 
 func (e *webhookEnv) enable(provider string) WebhookConfig {

@@ -405,6 +405,9 @@ function failureSimulation(settings?: Info['settings']): string[] {
   if (settings.smtpLatencyMs > 0) {
     lines.push(`Each message is acknowledged after a ${settings.smtpLatencyMs} ms delay.`)
   }
+  if (lines.length > 0) {
+    lines.push('Provider API calls get the same failures, as that provider’s own errors.')
+  }
   return lines
 }
 
