@@ -17,24 +17,24 @@
   <a href="https://github.com/arifurrahmanns/envry/releases/latest">All downloads</a>
 </p>
 
-![Envry on Windows: the Sent list with an HTML email open in the reader](docs/images/app-dark.png)
+![Envry on Windows: the Sent list with Resend and SendGrid badges, and an HTML email open in the reader with its verify link as a chip](docs/images/app-dark.png)
 
-> **Status:** early development; expect breaking changes before 1.0. SMTP capture, POP3, IMAP (all with optional TLS), the desktop app, the REST API, message checks and failure simulation work today.
+> **Status:** early development; expect breaking changes before 1.0. SMTP capture, POP3 and IMAP (all with optional TLS), the desktop app with self-updates, codes and links, provider API emulation with delivery webhooks, message checks, failure simulation and the REST API work today.
 
 ## Features
 
 - **A real desktop app.** Envry lives in the tray (the menu bar on macOS) with a Live/Offline status and a count of new mail, shows a notification when mail arrives, and can start at login. Closing the window keeps it catching mail.
-- **Updates itself.** Envry downloads new versions in the background and installs them when you choose **Restart to update**.
+- **Updates itself.** Envry downloads new versions in the background, says so in the sidebar and a notification, and installs them when you choose **Restart to update**.
 - **SMTP capture** on port 1025. Any username and password are accepted.
 - **A mailbox per recipient**, created automatically, including Bcc recipients.
 - **POP3 and IMAP** access to every mailbox, so you can test code that receives mail.
 - **A mail-client interface**: Sent, Receivers and Inbox views, a reader with preview, text, source and header views, resizable panes, a composer for test emails, and light and dark themes that follow your system.
 - **Clear port conflicts.** If Mailpit or another Envry already uses a port, Envry names the program holding it and can move to other ports in one click.
 - **Encrypted connections when you need them.** One switch adds STARTTLS and SSL/TLS ports, and **Trust certificate** lets apps that check certificates connect without changes.
-- **Codes and links at a glance.** Verification codes and sign-in, verify, reset and invite links appear as one-click copy chips above the message and in the new-mail notice, so testing a sign-up flow needs no scrolling.
-- **Provider APIs.** Apps that send through the Resend, SendGrid, Postmark, Mailgun or Amazon SES SDK can point it at Envry and see every email, without changing how they send.
+- **Codes and links at a glance.** Verification codes and sign-in, verify, reset and invite links appear as one-click copy chips above the message, and new-mail notifications show the code itself, so testing a sign-up flow needs no scrolling.
+- **Provider APIs.** Apps that send through the Resend, SendGrid, Postmark, Mailgun or Amazon SES SDK (from Node.js, Python, PHP or Laravel) can point it at Envry and see every email, without changing how they send. Envry calls the app back with signed delivery, bounce and spam-complaint webhooks, as the provider would.
 - **Message checks** for a missing plain-text part, images without alt text, Gmail clipping, broken links and spam-prone headers.
-- **Failure simulation** to test how your application handles rejected recipients, temporary errors and slow servers.
+- **Failure simulation** to test how your application handles rejected recipients, temporary errors and slow servers, over SMTP and through the provider APIs.
 - **REST API and live events** so automated tests can wait for and assert on emails.
 - **A headless `envry` command** with the same server, for CI, containers and servers.
 
@@ -56,7 +56,7 @@ The installers are not code-signed yet, so the first launch shows a warning. On 
 
 Envry keeps mail in `~/.envry/envry.db`, shared with the `envry` command.
 
-**Updates:** from version 0.2.1 on, Envry checks for a new release shortly after it starts and every six hours, and downloads it in the background. When it is ready, Envry shows a notification and a **Restart to update** item in the tray menu; **Check for updates…** in the same menu checks right away. Each update is verified against Envry's signing key before it is installed. Version 0.2.0 has no updater, so install 0.2.1 or later from the downloads above once.
+**Updates:** from version 0.2.1 on, Envry checks for a new release shortly after it starts and every six hours, and downloads it in the background. When it is ready, Envry shows a notification, an **Update ready** card at the bottom of the sidebar (from version 0.2.4 on) and a **Restart to update** item in the tray menu; **Check for updates…** in the same menu checks right away. Each update is verified against Envry's signing key before it is installed. Version 0.2.0 has no updater, so install 0.2.1 or later from the downloads above once.
 
 ### Command-line server
 
@@ -97,7 +97,7 @@ scoop install envry
 
 ## Quick start
 
-Open Envry and point your application's mailer at `localhost:1025`. Mail shows up in the app the moment it is sent. The **Connection** page lists every address and port, with ready-made settings for Node.js, Laravel, Python and Django.
+Open Envry and point your application's mailer at `localhost:1025`. Mail shows up in the app the moment it is sent. The **Connection** page lists every address and port, with ready-made settings for Node.js, Laravel, Python and Django, the secure-connections switch, and the setup for each provider API and its webhooks.
 
 | Service | Default port |
 | --- | --- |
@@ -122,9 +122,9 @@ Envry follows your system's light or dark theme; you can also pick one under **A
 
 ![Composing a test email with recipient chips](docs/images/compose.png)
 
-**Connection** shows the server settings for your app and for mail clients, each ready to copy:
+**Connection** shows the server settings for your app and for mail clients, each ready to copy, with secure connections at the top:
 
-![Connection page with SMTP, IMAP and POP3 settings](docs/images/connection.png)
+![Connection page with the secure-connections switch, then the SMTP and IMAP settings](docs/images/connection.png)
 
 ## Reading mail over IMAP
 
@@ -240,9 +240,11 @@ Each call has the provider's own format and signature, so the app's handler and 
 **Send test event** posts a sample "delivered" event, and the provider's recent calls are listed with the HTTP status
 your app answered, so a failing handler stands out.
 
+![The Connection page's provider section: Resend's base URL and SDK setup, its delivery webhook with signing secret, and recent calls](docs/images/providers.png)
+
 ## Codes and links
 
-When a message contains a one-time code (`482913`, `123 456`, `Q7X-B2M`) or an action link, the reader shows it as a chip with a copy button under the header, and the new-mail notice offers **Copy code**. Links are recognised as **verify**, **reset**, **sign-in** (magic links) or **invite** links by their text and URL, and only when they carry a token or say what they do; unsubscribe and preference links are ignored. Prices, phone numbers, dates, order numbers and discount codes are not mistaken for codes.
+When a message contains a one-time code (`482913`, `123 456`, `Q7X-B2M`) or an action link, the reader shows it as a chip with a copy button under the header, the in-app new-mail notice offers **Copy code**, and the desktop notification is titled with the code ("Code 482913") so it can be typed without opening Envry. Links are recognised as **verify**, **reset**, **sign-in** (magic links) or **invite** links by their text and URL, and only when they carry a token or say what they do; unsubscribe and preference links are ignored. Prices, phone numbers, dates, order numbers and discount codes are not mistaken for codes.
 
 Tests can read the same results from `GET /api/v1/messages/{id}/extracts`:
 
@@ -350,10 +352,6 @@ All endpoints live under `/api/v1` and return JSON. Lists are newest first and p
 | `GET` | `/messages/{id}/attachments/{aid}` | Attachment download |
 | `GET` | `/messages/{id}/checks` | Message checks and the list of links; makes no network requests |
 | `POST` | `/messages/{id}/checks/links` | Request the message's links and return each status code |
-| `GET` | `/webhooks` | Delivery webhook settings for each emulated provider |
-| `PUT` | `/webhooks/{provider}` | Set a provider's webhook `url`, `enabled` and (Resend, Mailgun) `secret` |
-| `POST` | `/webhooks/{provider}/test` | Send a test event and return how the app answered |
-| `GET` | `/webhooks/deliveries` | The last 100 webhook calls, newest first |
 | `GET` | `/messages/{id}/extracts` | One-time codes and verify, reset, sign-in and invite links, best match first |
 | `DELETE` | `/messages/{id}`, `/messages` | Delete one message, or all of them |
 | `GET` | `/mailboxes` | Recipient mailboxes with folders, totals and unread counts |
@@ -364,9 +362,13 @@ All endpoints live under `/api/v1` and return JSON. Lists are newest first and p
 | `GET`, `DELETE` | `/accounts/{address}` | Read or remove an account |
 | `POST` | `/send` | Compose a message: `{from?, to, cc?, bcc?, subject, text, html?}` |
 | `GET` | `/wait` | Long-poll for a matching message (see above) |
+| `GET` | `/webhooks` | Delivery webhook settings for each emulated provider |
+| `PUT` | `/webhooks/{provider}` | Set a provider's webhook `url`, `enabled` and (Resend, Mailgun) `secret` |
+| `POST` | `/webhooks/{provider}/test` | Send a test event and return how the app answered |
+| `GET` | `/webhooks/deliveries` | The last 100 webhook calls, newest first |
 | `GET` | `/info` | Version, ports, settings and counts |
 
-`GET /ws` streams live events (`message.created`, `message.deleted`, `messages.cleared`, `delivery.updated`, `delivery.deleted`, `mailbox.created`, `mailbox.updated`) as JSON `{type, data}` frames.
+`GET /ws` streams live events (`message.created`, `message.deleted`, `messages.cleared`, `delivery.updated`, `delivery.deleted`, `mailbox.created`, `mailbox.updated`, and `webhook.sent` after each delivery webhook call) as JSON `{type, data}` frames.
 
 Request bodies must be `application/json`, and the WebSocket accepts same-origin connections only, so other websites open in your browser cannot read or change captured mail.
 
@@ -430,11 +432,11 @@ internal/
   api/              REST API, /wait long-poll and /ws event stream
   app/              Wires the servers together and runs them
   checks/           Message checks and the on-demand link checker
-  compose/          Builds outgoing messages for the API and envry send
-  emulate/          Resend, SendGrid, Postmark, Mailgun and Amazon SES send APIs and webhooks
-  extract/          Finds one-time codes and action links in a message
+  compose/          Builds outgoing messages for the API, envry send and the provider APIs
   config/           Flags and ENVRY_* environment variables
+  emulate/          Resend, SendGrid, Postmark, Mailgun and Amazon SES APIs, webhooks, failures
   events/           In-process publish/subscribe bus
+  extract/          Finds one-time codes and action links in a message
   imapd/            IMAP server (go-imap v2) kept in sync through the event bus
   mimeparse/        Raw message → addresses, bodies, attachments
   pop3d/            POP3 server (RFC 1939)
@@ -444,7 +446,7 @@ internal/
   version/          Build metadata
   webui/            Embeds the interface, with SPA fallback
 web/                The interface: React + TypeScript + Tailwind CSS + shadcn/ui
-desktop/            Desktop app (Tauri 2): runs envry as a sidecar, tray, notifications
+desktop/            Desktop app (Tauri 2): runs envry as a sidecar, tray, notifications, updates
   scripts/          Builds the envry sidecar for the Tauri target
   src/              Status page shown while Envry starts, is stopped or hits a port conflict
   src-tauri/        Rust side: server lifecycle, tray, window, capabilities, icons, bundling
