@@ -8,7 +8,8 @@ export type Address = {
 
 export type RecipientType = 'to' | 'cc' | 'bcc'
 
-export type MessageSource = 'smtp' | 'imap_append' | 'api'
+/** How a message arrived; api:resend, api:ses... for an emulated provider API. */
+export type MessageSource = 'smtp' | 'imap_append' | 'api' | `api:${string}`
 
 export type MessageSummary = {
   id: string

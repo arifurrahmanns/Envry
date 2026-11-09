@@ -14,7 +14,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { urls } from '@/lib/api'
-import { displayName, groupByDay, messageTime, rowTime } from '@/lib/format'
+import { displayName, groupByDay, messageTime, rowTime, sourceName, viaProvider } from '@/lib/format'
 import { isDelivery, type ListItem } from '@/lib/messages'
 import { cn } from '@/lib/utils'
 
@@ -221,6 +221,11 @@ function MessageRow({
           <span className="truncate text-[14px] font-semibold">{name}</span>
           {item.attachmentCount > 0 && (
             <Paperclip className="size-3.5 shrink-0 text-muted-foreground" aria-label="Has attachments" />
+          )}
+          {viaProvider(item.source) && (
+            <span className="shrink-0 rounded border px-1 text-[11px] font-medium text-muted-foreground">
+              {sourceName(item.source)}
+            </span>
           )}
           {delivery?.rcptType === 'bcc' && (
             <span className="shrink-0 rounded border px-1 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">

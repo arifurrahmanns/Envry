@@ -29,6 +29,8 @@ export function ConnectionPage() {
   const strict = data?.settings.strictAuth ?? false
   const creds = credentials(strict)
   const [lang, setLang] = useState<keyof typeof snippets>('node')
+  const [provider, setProvider] = useState<keyof typeof providers>('resend')
+  const apiBase = `http://${host}:${ports.http}`
 
   return (
     <>
@@ -138,6 +140,38 @@ export function ConnectionPage() {
                   {snippets[lang].code(host, ports.smtp, creds)}
                 </pre>
                 <CopyButton value={snippets[lang].code(host, ports.smtp, creds)} className="absolute top-2 right-2" />
+              </div>
+            </div>
+          </SettingsSection>
+
+          <SettingsSection
+            title="Send through a provider API"
+            description="Apps that send with the Resend, SendGrid, Postmark, Mailgun or Amazon SES SDK can point it at Envry instead. Any API key works, and nothing is sent."
+          >
+            <div className="space-y-3">
+              <div role="tablist" aria-label="Provider" className="flex flex-wrap gap-1">
+                {(Object.keys(providers) as (keyof typeof providers)[]).map((k) => (
+                  <button
+                    key={k}
+                    type="button"
+                    role="tab"
+                    aria-selected={provider === k}
+                    onClick={() => setProvider(k)}
+                    className={cn(
+                      'h-8 rounded-lg px-3 text-sm text-muted-foreground hover:text-foreground',
+                      provider === k && 'bg-muted font-medium text-foreground',
+                    )}
+                  >
+                    {providers[k].label}
+                  </button>
+                ))}
+              </div>
+              <Field label="API base URL" value={providers[provider].baseUrl(apiBase)} copy />
+              <div className="relative rounded-lg border bg-muted/40">
+                <pre className="overflow-x-auto p-4 pr-12 font-mono text-[13px] leading-relaxed">
+                  {providers[provider].code(apiBase)}
+                </pre>
+                <CopyButton value={providers[provider].code(apiBase)} className="absolute top-2 right-2" />
               </div>
             </div>
           </SettingsSection>
@@ -436,6 +470,74 @@ EMAIL_PORT = ${port}
 EMAIL_HOST_USER = "${c.user}"
 EMAIL_HOST_PASSWORD = "${c.pass}"
 EMAIL_USE_TLS = False`,
+  },
+}
+
+/**
+ * Provider SDK setups that send to Envry's emulated APIs (internal/emulate)
+ * instead of the provider. `base` is Envry's HTTP address.
+ */
+const providers = {
+  resend: {
+    label: 'Resend',
+    baseUrl: (base: string) => `${base}/emulate/resend`,
+    code: (base: string) => `# .env: the Resend SDK reads its API address from here
+RESEND_BASE_URL=${base}/emulate/resend
+
+import { Resend } from 'resend'
+
+// Any API key works.
+const resend = new Resend(process.env.RESEND_API_KEY)`,
+  },
+  sendgrid: {
+    label: 'SendGrid',
+    baseUrl: (base: string) => `${base}/emulate/sendgrid/`,
+    code: (base: string) => `import sgMail from '@sendgrid/mail'
+import client from '@sendgrid/client'
+
+// Any API key works.
+client.setApiKey(process.env.SENDGRID_API_KEY)
+client.setDefaultRequest('baseUrl', '${base}/emulate/sendgrid/')
+sgMail.setClient(client)`,
+  },
+  postmark: {
+    label: 'Postmark',
+    baseUrl: (base: string) => `${base}/emulate/postmark`,
+    code: (base: string) => `import { ServerClient } from 'postmark'
+
+// Any server token works.
+const client = new ServerClient(process.env.POSTMARK_SERVER_TOKEN, {
+  useHttps: false,
+  requestHost: '${base.replace(/^https?:\/\//, '')}/emulate/postmark',
+})`,
+  },
+  mailgun: {
+    label: 'Mailgun',
+    baseUrl: (base: string) => `${base}/emulate/mailgun`,
+    code: (base: string) => `import Mailgun from 'mailgun.js'
+import FormData from 'form-data'
+
+// Any API key works.
+const mg = new Mailgun(FormData).client({
+  username: 'api',
+  key: process.env.MAILGUN_API_KEY,
+  url: '${base}/emulate/mailgun',
+})`,
+  },
+  ses: {
+    label: 'Amazon SES',
+    baseUrl: (base: string) => `${base}/emulate/ses`,
+    code: (base: string) => `import { SESv2Client } from '@aws-sdk/client-sesv2'
+
+// Any region and credentials work.
+const ses = new SESv2Client({
+  region: 'us-east-1',
+  endpoint: '${base}/emulate/ses',
+  credentials: { accessKeyId: 'any', secretAccessKey: 'any' },
+})
+
+// Laravel: in config/services.php, add to 'ses':
+//   'endpoint' => '${base}/emulate/ses',`,
   },
 }
 

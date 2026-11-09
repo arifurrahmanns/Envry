@@ -78,6 +78,27 @@ export function count(n: number): string {
   return new Intl.NumberFormat().format(n)
 }
 
+const sources: Record<string, string> = {
+  smtp: 'SMTP',
+  api: 'API',
+  imap_append: 'IMAP',
+  'api:resend': 'Resend',
+  'api:sendgrid': 'SendGrid',
+  'api:postmark': 'Postmark',
+  'api:mailgun': 'Mailgun',
+  'api:ses': 'Amazon SES',
+}
+
+/** How a message arrived: "SMTP", or the provider API it was sent through. */
+export function sourceName(source: string): string {
+  return sources[source] ?? source
+}
+
+/** Whether the message was sent through an emulated provider API. */
+export function viaProvider(source: string): boolean {
+  return source.startsWith('api:')
+}
+
 export function displayName(a: Address): string {
   return a.name.trim() || a.address
 }

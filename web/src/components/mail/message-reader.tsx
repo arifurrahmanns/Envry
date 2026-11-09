@@ -32,7 +32,7 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { urls, type Address, type Attachment, type Delivery, type MessageDetail } from '@/lib/api'
-import { dayLabel, displayName, fileSize, mediumTime, messageTime, rowTime } from '@/lib/format'
+import { dayLabel, displayName, fileSize, mediumTime, messageTime, rowTime, sourceName } from '@/lib/format'
 import { useMessage, useRawSource } from '@/lib/queries'
 import { cn } from '@/lib/utils'
 
@@ -217,10 +217,9 @@ function StatusPill({ delivery }: { delivery?: Delivery }) {
   )
 }
 
-const sourceLabel: Record<string, string> = { smtp: 'SMTP', api: 'API', imap_append: 'IMAP' }
 
 function tagsFor(m: MessageDetail, delivery?: Delivery): string[] {
-  const tags = [sourceLabel[m.source] ?? m.source]
+  const tags = [sourceName(m.source)]
   if (m.hasHtml) tags.push('HTML')
   if (m.hasText) tags.push('Plain text')
   if (m.attachments.length > 0) tags.push(`${m.attachments.length} attachment${m.attachments.length === 1 ? '' : 's'}`)
@@ -361,7 +360,7 @@ const rcptLabel: Record<string, string> = { to: 'To', cc: 'Cc', bcc: 'Bcc' }
 
 function Activity({ message: m, viewingAs }: { message: MessageDetail; viewingAs?: string }) {
   const when = ago(m.receivedAt)
-  const via = sourceLabel[m.source] ?? m.source
+  const via = sourceName(m.source)
   // A recipient only learns about other recipients' Bcc copies in Sent.
   const recipients = viewingAs ? m.recipients.filter((r) => r.type !== 'bcc' || r.address === viewingAs) : m.recipients
 

@@ -32,6 +32,7 @@
 - **Clear port conflicts.** If Mailpit or another Envry already uses a port, Envry names the program holding it and can move to other ports in one click.
 - **Encrypted connections when you need them.** One switch adds STARTTLS and SSL/TLS ports, and **Trust certificate** lets apps that check certificates connect without changes.
 - **Codes and links at a glance.** Verification codes and sign-in, verify, reset and invite links appear as one-click copy chips above the message and in the new-mail notice, so testing a sign-up flow needs no scrolling.
+- **Provider APIs.** Apps that send through the Resend, SendGrid, Postmark, Mailgun or Amazon SES SDK can point it at Envry and see every email, without changing how they send.
 - **Message checks** for a missing plain-text part, images without alt text, Gmail clipping, broken links and spam-prone headers.
 - **Failure simulation** to test how your application handles rejected recipients, temporary errors and slow servers.
 - **REST API and live events** so automated tests can wait for and assert on emails.
@@ -167,6 +168,36 @@ envry send --to dev@test.local --cc qa@test.local --bcc audit@test.local \
 ```
 
 It uses the `--smtp` address (or `ENVRY_SMTP`), so it finds a server started with the same settings. With `--user` and `--password` it signs in with SMTP AUTH; when the user is an account, a copy is also filed in its Sent folder.
+
+## Provider APIs
+
+Apps that send through an email provider's SDK instead of SMTP can point the SDK at Envry. Envry answers the
+send APIs of five providers in the shape their SDKs expect, captures each email like SMTP mail (with Cc, Bcc,
+Reply-To, custom headers, attachments and inline images), and shows the provider as a badge in the list. Any API
+key, token or AWS credentials work, and nothing is sent to the provider.
+
+| Provider | Base URL | How the official Node SDK is pointed at it |
+| --- | --- | --- |
+| Resend | `http://localhost:8025/emulate/resend` | `RESEND_BASE_URL` environment variable |
+| SendGrid | `http://localhost:8025/emulate/sendgrid/` | `client.setDefaultRequest('baseUrl', …)` on `@sendgrid/client`, then `sgMail.setClient(client)` |
+| Postmark | `http://localhost:8025/emulate/postmark` | `new ServerClient(token, { useHttps: false, requestHost: 'localhost:8025/emulate/postmark' })` |
+| Mailgun | `http://localhost:8025/emulate/mailgun` | `url` option of `mailgun.client()` |
+| Amazon SES | `http://localhost:8025/emulate/ses` | `endpoint` option of `SESv2Client` or `SESClient` (Laravel: `'endpoint'` in `config/services.php` under `ses`) |
+
+What each one accepts:
+
+- **Resend:** `POST /emails` and `/emails/batch`. Attachments given by URL (`path`) are listed but not downloaded.
+- **SendGrid:** `POST /v3/mail/send`, one email per personalization, with legacy substitutions applied.
+- **Postmark:** `POST /email`, `/email/batch`, `/email/withTemplate` and `/email/batchWithTemplates`. `Tag` and
+  `Metadata` become the `X-PM-*` headers Postmark adds.
+- **Mailgun:** `POST /v3/{domain}/messages` (including batch sending with `recipient-variables`) and
+  `/v3/{domain}/messages.mime`, as multipart or URL-encoded forms.
+- **Amazon SES:** the v2 `SendEmail` call with simple, raw or template content (nodemailer's SES transport included)
+  and the v1 `SendEmail` and `SendRawEmail` calls that Laravel's `ses` driver uses.
+
+Mail sent with a provider template Envry cannot render shows which template was used and the data it was given.
+Errors come back in each provider's format, for example a missing `from`, so error handling can be tested too. The
+Connection page shows the base URL and SDK setup for each provider.
 
 ## Codes and links
 
@@ -350,6 +381,7 @@ internal/
   app/              Wires the servers together and runs them
   checks/           Message checks and the on-demand link checker
   compose/          Builds outgoing messages for the API and envry send
+  emulate/          Resend, SendGrid, Postmark, Mailgun and Amazon SES send APIs
   extract/          Finds one-time codes and action links in a message
   config/           Flags and ENVRY_* environment variables
   events/           In-process publish/subscribe bus

@@ -21,6 +21,7 @@ import (
 
 	"github.com/arifurrahmanns/envry/internal/api"
 	"github.com/arifurrahmanns/envry/internal/config"
+	"github.com/arifurrahmanns/envry/internal/emulate"
 	"github.com/arifurrahmanns/envry/internal/imapd"
 	"github.com/arifurrahmanns/envry/internal/pop3d"
 	"github.com/arifurrahmanns/envry/internal/smtpd"
@@ -33,14 +34,15 @@ const shutdownTimeout = 5 * time.Second
 
 // App is one running Envry instance.
 type App struct {
-	cfg   *config.Config
-	log   *slog.Logger
-	store *store.Store
-	api   *api.Server
-	smtp  *smtpd.Server
-	pop3  *pop3d.Server
-	imap  *imapd.Server
-	tls   *tlsutil.Result // nil unless --tls
+	cfg     *config.Config
+	log     *slog.Logger
+	store   *store.Store
+	api     *api.Server
+	emulate *emulate.Server // provider send APIs under /emulate
+	smtp    *smtpd.Server
+	pop3    *pop3d.Server
+	imap    *imapd.Server
+	tls     *tlsutil.Result // nil unless --tls
 
 	httpServer *http.Server
 	endpoints  []*endpoint
@@ -94,7 +96,7 @@ func New(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, error
 		}
 	}
 
-	a := &App{cfg: cfg, log: log, store: st, api: api.New(cfg, st, log)}
+	a := &App{cfg: cfg, log: log, store: st, api: api.New(cfg, st, log), emulate: emulate.New(st, log, cfg.MaxSize)}
 
 	var tlsConfig *tls.Config
 	if cfg.TLS {
@@ -185,17 +187,22 @@ func (a *App) routes() http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.Recoverer)
 	r.Use(requestLogger(a.log))
-	if a.cfg.UIAuth != nil {
-		r.Use(basicAuth(a.cfg.UIAuth))
-	}
-	r.Mount("/api", a.api.Routes())
-	r.Get("/ws", a.api.HandleWS)
+	// Provider SDKs authenticate with their own API keys, never the UI's
+	// password, so the emulated APIs stay outside it (like SMTP).
+	r.Mount("/emulate", a.emulate.Routes())
 
 	ui := webui.New()
 	if !ui.Built() {
 		a.log.Warn("web UI not embedded in this build; serving a placeholder page (run `make build`)")
 	}
-	r.Handle("/*", ui)
+	r.Group(func(r chi.Router) {
+		if a.cfg.UIAuth != nil {
+			r.Use(basicAuth(a.cfg.UIAuth))
+		}
+		r.Mount("/api", a.api.Routes())
+		r.Get("/ws", a.api.HandleWS)
+		r.Handle("/*", ui)
+	})
 	return r
 }
 
