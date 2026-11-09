@@ -17,6 +17,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/arifurrahmanns/envry/internal/config"
+	"github.com/arifurrahmanns/envry/internal/emulate"
 	"github.com/arifurrahmanns/envry/internal/store"
 )
 
@@ -36,7 +37,9 @@ func newEnv(t *testing.T) *env {
 		SMTPAddr: "127.0.0.1:2525", POP3Addr: ":1110", IMAPAddr: "[::1]:1143", HTTPAddr: "0.0.0.0:8025",
 		MaxMessages: 1000, MaxSize: 25 << 20,
 	}
-	a := New(cfg, st, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	a := New(cfg, st, log)
+	a.SetWebhooks(emulate.New(st, log, 0).Webhooks())
 	r := chi.NewRouter()
 	r.Mount("/api", a.Routes())
 	r.Get("/ws", a.HandleWS)
@@ -481,4 +484,55 @@ func TestInfoFailureSimulation(t *testing.T) {
 	if !strings.Contains(string(b), `"smtpRejectRcpt":[]`) || !strings.Contains(string(b), `"smtpRejectRate":0`) {
 		t.Errorf("info = %s", b)
 	}
+}
+
+func TestWebhookSettings(t *testing.T) {
+	e := newEnv(t)
+	app := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer app.Close()
+
+	var list struct {
+		Items []struct {
+			Provider        string `json:"provider"`
+			Signing         string `json:"signing"`
+			Secret          string `json:"secret"`
+			VerificationKey string `json:"verificationKey"`
+		} `json:"items"`
+	}
+	e.json("GET", "/api/v1/webhooks", nil, 200, &list)
+	if len(list.Items) != 5 || list.Items[0].Provider != "resend" || list.Items[0].Signing != "svix" ||
+		list.Items[1].VerificationKey == "" || list.Items[3].Secret == "" {
+		t.Fatalf("list = %+v", list)
+	}
+
+	var saved struct {
+		URL     string `json:"url"`
+		Enabled bool   `json:"enabled"`
+	}
+	e.json("PUT", "/api/v1/webhooks/postmark", map[string]any{"url": app.URL, "enabled": true}, 200, &saved)
+	if saved.URL != app.URL || !saved.Enabled {
+		t.Errorf("saved = %+v", saved)
+	}
+	var d struct {
+		Status int    `json:"status"`
+		Event  string `json:"event"`
+	}
+	e.json("POST", "/api/v1/webhooks/postmark/test", map[string]any{}, 200, &d)
+	if d.Status != 204 || d.Event != "delivered" {
+		t.Errorf("test delivery = %+v", d)
+	}
+	var log struct {
+		Items []struct {
+			Provider string `json:"provider"`
+		} `json:"items"`
+	}
+	e.json("GET", "/api/v1/webhooks/deliveries", nil, 200, &log)
+	if len(log.Items) != 1 || log.Items[0].Provider != "postmark" {
+		t.Errorf("log = %+v", log)
+	}
+
+	e.json("PUT", "/api/v1/webhooks/sparkpost", map[string]any{"url": app.URL}, 404, nil)
+	e.json("PUT", "/api/v1/webhooks/resend", map[string]any{"url": "not a url", "enabled": true}, 400, nil)
 }

@@ -165,7 +165,11 @@ func (s *Server) postmarkSend(r *http.Request, e pmEmail, withTemplate bool) (pm
 		})
 	}
 
-	id, err := s.deliver(r.Context(), r, Postmark, m)
+	meta := eventMeta{values: e.Metadata, stream: e.MessageStream}
+	if e.Tag != "" {
+		meta.tags = []string{e.Tag}
+	}
+	id, err := s.deliver(r.Context(), r, Postmark, m, meta)
 	if err != nil {
 		return pmResult{}, err
 	}

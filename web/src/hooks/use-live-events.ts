@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 
-import { urls, type MessageSummary } from '@/lib/api'
+import { urls, type MessageSummary, type WebhookDelivery } from '@/lib/api'
 import { displayName } from '@/lib/format'
 import { extractsQuery } from '@/lib/queries'
 
@@ -15,6 +15,7 @@ type LiveEvent =
   | { type: 'delivery.deleted'; data: { deliveryId: number } }
   | { type: 'mailbox.created'; data: { address: string } }
   | { type: 'mailbox.updated'; data: { address: string } }
+  | { type: 'webhook.sent'; data: WebhookDelivery }
 
 export type LiveStatus = 'connecting' | 'live' | 'offline'
 
@@ -88,6 +89,9 @@ export function useLiveEvents(onOpenMessage: (id: string) => void): LiveStatus {
         case 'mailbox.created':
         case 'mailbox.updated':
           void qc.invalidateQueries({ queryKey: ['mailboxes'] })
+          break
+        case 'webhook.sent':
+          void qc.invalidateQueries({ queryKey: ['webhook-deliveries'] })
           break
       }
     }

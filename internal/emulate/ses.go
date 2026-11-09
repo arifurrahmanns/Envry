@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/mail"
+	"net/url"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -78,6 +79,10 @@ func (s *Server) sesV2Send(w http.ResponseWriter, r *http.Request) {
 		s.sesV2Error(w, err)
 		return
 	}
+	tags := eventMeta{values: map[string]string{}}
+	for _, t := range req.EmailTags {
+		tags.values[t.Name] = t.Value
+	}
 	var to, cc, bcc []string
 	if d := req.Destination; d != nil {
 		to, cc, bcc = d.ToAddresses, d.CcAddresses, d.BccAddresses
@@ -87,7 +92,7 @@ func (s *Server) sesV2Send(w http.ResponseWriter, r *http.Request) {
 	c := req.Content
 	switch {
 	case c.Raw != nil:
-		id, err = s.sesRaw(r, c.Raw.Data, req.FromEmailAddress, append(append(to, cc...), bcc...))
+		id, err = s.sesRaw(r, c.Raw.Data, req.FromEmailAddress, append(append(to, cc...), bcc...), tags)
 	case c.Simple != nil || c.Template != nil:
 		m, merr := sesMessage(req.FromEmailAddress, to, cc, bcc, req.ReplyToAddresses)
 		if merr != nil {
@@ -126,7 +131,7 @@ func (s *Server) sesV2Send(w http.ResponseWriter, r *http.Request) {
 		for _, tag := range req.EmailTags {
 			m.Headers = append(m.Headers, compose.Header{Name: "X-SES-Tag", Value: tag.Name + "=" + tag.Value})
 		}
-		id, err = s.deliver(r.Context(), r, SES, m)
+		id, err = s.deliver(r.Context(), r, SES, m, tags)
 	default:
 		err = invalid("Content is required: Simple, Raw or Template.")
 	}
@@ -163,7 +168,7 @@ func sesMessage(from string, to, cc, bcc, replyTo []string) (compose.Message, er
 
 // sesRaw captures a raw message. Without explicit recipients, the To, Cc
 // and Bcc headers say where it goes; without a sender, the From header.
-func (s *Server) sesRaw(r *http.Request, raw []byte, from string, rcpts []string) (string, error) {
+func (s *Server) sesRaw(r *http.Request, raw []byte, from string, rcpts []string, meta eventMeta) (string, error) {
 	if len(raw) == 0 {
 		return "", invalid("RawMessage is required.")
 	}
@@ -190,7 +195,7 @@ func (s *Server) sesRaw(r *http.Request, raw []byte, from string, rcpts []string
 	if len(envelope) == 0 {
 		return "", invalid("Missing final '@domain'")
 	}
-	return s.capture(r.Context(), r, SES, from, envelope, raw)
+	return s.capture(r.Context(), r, SES, from, envelope, raw, meta)
 }
 
 func headerAddresses(p *mimeparse.Message, name string) []mimeparse.Address {
@@ -247,7 +252,7 @@ func (s *Server) sesV1(w http.ResponseWriter, r *http.Request) {
 			err = invalid("RawMessage.Data is not valid base64.")
 			break
 		}
-		id, err = s.sesRaw(r, raw, f.Get("Source"), members("Destinations"))
+		id, err = s.sesRaw(r, raw, f.Get("Source"), members("Destinations"), sesV1Tags(f))
 	case "SendEmail":
 		var m compose.Message
 		m, err = sesMessage(f.Get("Source"), members("Destination.ToAddresses"), members("Destination.CcAddresses"),
@@ -258,7 +263,7 @@ func (s *Server) sesV1(w http.ResponseWriter, r *http.Request) {
 		m.Subject = f.Get("Message.Subject.Data")
 		m.Text = f.Get("Message.Body.Text.Data")
 		m.HTML = f.Get("Message.Body.Html.Data")
-		id, err = s.deliver(r.Context(), r, SES, m)
+		id, err = s.deliver(r.Context(), r, SES, m, sesV1Tags(f))
 	default:
 		err = errUnsupportedAction{action}
 	}
@@ -287,6 +292,18 @@ func (s *Server) sesV1(w http.ResponseWriter, r *http.Request) {
 	}
 	resp.Metadata.RequestID = id
 	writeXML(w, http.StatusOK, resp)
+}
+
+// sesV1Tags reads Tags.member.N.Name and .Value.
+func sesV1Tags(f url.Values) eventMeta {
+	meta := eventMeta{values: map[string]string{}}
+	for i := 1; ; i++ {
+		name := f.Get(fmt.Sprintf("Tags.member.%d.Name", i))
+		if name == "" {
+			return meta
+		}
+		meta.values[name] = f.Get(fmt.Sprintf("Tags.member.%d.Value", i))
+	}
 }
 
 type errUnsupportedAction struct{ action string }

@@ -412,3 +412,22 @@ func TestFileDatabaseReopens(t *testing.T) {
 		t.Errorf("after reopen: %+v, %v", page, err)
 	}
 }
+
+func TestProviderWebhooks(t *testing.T) {
+	s := newStore(t, 0).Store
+	ctx := context.Background()
+	w, found, err := s.ProviderWebhook(ctx, "resend")
+	if err != nil || found || w.Provider != "resend" || w.Enabled {
+		t.Fatalf("before saving: %+v %v %v", w, found, err)
+	}
+	if _, err := s.SaveProviderWebhook(ctx, ProviderWebhook{Provider: "resend", URL: "http://localhost:3000/hooks", Secret: "whsec_x", Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SaveProviderWebhook(ctx, ProviderWebhook{Provider: "resend", URL: "http://localhost:3000/hooks/resend", Secret: "whsec_y", Enabled: false}); err != nil {
+		t.Fatal(err)
+	}
+	w, found, err = s.ProviderWebhook(ctx, "resend")
+	if err != nil || !found || w.URL != "http://localhost:3000/hooks/resend" || w.Secret != "whsec_y" || w.Enabled || w.UpdatedAt.IsZero() {
+		t.Errorf("after saving: %+v %v %v", w, found, err)
+	}
+}

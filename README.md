@@ -199,6 +199,29 @@ Mail sent with a provider template Envry cannot render shows which template was 
 Errors come back in each provider's format, for example a missing `from`, so error handling can be tested too. The
 Connection page shows the base URL and SDK setup for each provider.
 
+### Delivery webhooks
+
+Real providers call your app back when mail is delivered, bounces or is reported as spam. Envry does the same for mail
+sent through an emulated API: turn on **Delivery webhooks** for a provider on the Connection page and enter your
+app's webhook URL. About a second after each email, Envry sends:
+
+- **delivered** for every recipient,
+- **bounced** instead for `bounce@…` and `bounce+anything@…`, so a hard bounce can be tested on demand,
+- **complained** (a spam report) after delivery for `complaint@…` and `complaint+anything@…`.
+
+Each call has the provider's own format and signature, so the app's handler and its signature check work unchanged:
+
+| Provider | Format | Signature |
+| --- | --- | --- |
+| Resend | `email.delivered`, `email.bounced`, `email.complained` | Svix headers, signed with the secret shown (or the one your app already uses); `resend.webhooks.verify` accepts them |
+| SendGrid | Event Webhook array (`delivered`, `bounce`, `spamreport`), with your categories and `custom_args` | Signed Event Webhook (ECDSA); verify with the key shown |
+| Postmark | `Delivery`, `Bounce` and `SpamComplaint` records with your `Tag` and `Metadata` | None, as with Postmark; put `user:password@` in the URL for basic authentication |
+| Mailgun | `delivered`, `failed` (bounce) and `complained` events with your tags and variables | HMAC with the signing key shown (or your own) |
+| Amazon SES | SNS notifications carrying SES `Delivery`, `Bounce` and `Complaint` events | Envry cannot sign like SNS: skip the SNS signature check in development |
+
+**Send test event** posts a sample "delivered" event, and the provider's recent calls are listed with the HTTP status
+your app answered, so a failing handler stands out.
+
 ## Codes and links
 
 When a message contains a one-time code (`482913`, `123 456`, `Q7X-B2M`) or an action link, the reader shows it as a chip with a copy button under the header, and the new-mail notice offers **Copy code**. Links are recognised as **verify**, **reset**, **sign-in** (magic links) or **invite** links by their text and URL, and only when they carry a token or say what they do; unsubscribe and preference links are ignored. Prices, phone numbers, dates, order numbers and discount codes are not mistaken for codes.
@@ -304,6 +327,10 @@ All endpoints live under `/api/v1` and return JSON. Lists are newest first and p
 | `GET` | `/messages/{id}/attachments/{aid}` | Attachment download |
 | `GET` | `/messages/{id}/checks` | Message checks and the list of links; makes no network requests |
 | `POST` | `/messages/{id}/checks/links` | Request the message's links and return each status code |
+| `GET` | `/webhooks` | Delivery webhook settings for each emulated provider |
+| `PUT` | `/webhooks/{provider}` | Set a provider's webhook `url`, `enabled` and (Resend, Mailgun) `secret` |
+| `POST` | `/webhooks/{provider}/test` | Send a test event and return how the app answered |
+| `GET` | `/webhooks/deliveries` | The last 100 webhook calls, newest first |
 | `GET` | `/messages/{id}/extracts` | One-time codes and verify, reset, sign-in and invite links, best match first |
 | `DELETE` | `/messages/{id}`, `/messages` | Delete one message, or all of them |
 | `GET` | `/mailboxes` | Recipient mailboxes with folders, totals and unread counts |
@@ -381,7 +408,7 @@ internal/
   app/              Wires the servers together and runs them
   checks/           Message checks and the on-demand link checker
   compose/          Builds outgoing messages for the API and envry send
-  emulate/          Resend, SendGrid, Postmark, Mailgun and Amazon SES send APIs
+  emulate/          Resend, SendGrid, Postmark, Mailgun and Amazon SES send APIs and webhooks
   extract/          Finds one-time codes and action links in a message
   config/           Flags and ENVRY_* environment variables
   events/           In-process publish/subscribe bus

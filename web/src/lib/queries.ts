@@ -27,6 +27,8 @@ export const keys = {
   checks: (id: string) => ['message', id, 'checks'] as const,
   extracts: (id: string) => ['message', id, 'extracts'] as const,
   mailboxes: ['mailboxes'] as const,
+  webhooks: ['webhooks'] as const,
+  webhookDeliveries: ['webhook-deliveries'] as const,
   mailboxMessages: (address: string, folder: string, q = '') =>
     ['mailbox-messages', address, folder, { q }] as const,
 }
@@ -84,6 +86,16 @@ export function useMessageExtracts(id: string) {
 
 export function useCheckLinks(id: string) {
   return useMutation({ mutationFn: () => api.checkLinks(id) })
+}
+
+/** Provider webhook settings (the Connection page). */
+export function useWebhooks() {
+  return useQuery({ queryKey: keys.webhooks, queryFn: api.webhooks, select: (d) => d.items })
+}
+
+/** Recent webhook calls; live events refresh them. */
+export function useWebhookDeliveries() {
+  return useQuery({ queryKey: keys.webhookDeliveries, queryFn: api.webhookDeliveries, select: (d) => d.items })
 }
 
 export function useMailboxes() {

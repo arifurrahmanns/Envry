@@ -97,6 +97,7 @@ func New(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, error
 	}
 
 	a := &App{cfg: cfg, log: log, store: st, api: api.New(cfg, st, log), emulate: emulate.New(st, log, cfg.MaxSize)}
+	a.api.SetWebhooks(a.emulate.Webhooks())
 
 	var tlsConfig *tls.Config
 	if cfg.TLS {

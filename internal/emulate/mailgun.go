@@ -38,14 +38,15 @@ func (s *Server) mailgunMessages(w http.ResponseWriter, r *http.Request) {
 		s.mailgunError(w, err)
 		return
 	}
-	msgs, err := mailgunMessages(form)
+	msgs, meta, err := mailgunMessages(form)
 	if err != nil {
 		s.mailgunError(w, err)
 		return
 	}
+	meta.domain = chi.URLParam(r, "domain")
 	var first string
 	for _, m := range msgs {
-		id, err := s.deliver(r.Context(), r, Mailgun, m)
+		id, err := s.deliver(r.Context(), r, Mailgun, m, meta)
 		if err != nil {
 			s.mailgunError(w, err)
 			return
@@ -90,7 +91,7 @@ func (s *Server) mailgunMIME(w http.ResponseWriter, r *http.Request) {
 	for i, a := range to {
 		rcpts[i] = a.Address
 	}
-	id, err := s.capture(r.Context(), r, Mailgun, from, rcpts, raw)
+	id, err := s.capture(r.Context(), r, Mailgun, from, rcpts, raw, eventMeta{domain: chi.URLParam(r, "domain")})
 	if err != nil {
 		s.mailgunError(w, err)
 		return
@@ -130,13 +131,15 @@ func (f form) get(key string) string {
 	return ""
 }
 
-func mailgunMessages(f form) ([]compose.Message, error) {
+// mailgunMessages returns the messages to capture (several with batch
+// sending) and the tags and variables their events echo.
+func mailgunMessages(f form) ([]compose.Message, eventMeta, error) {
 	if f.get("from") == "" {
-		return nil, invalid("from parameter is missing")
+		return nil, eventMeta{}, invalid("from parameter is missing")
 	}
 	from, err := address("from", f.get("from"))
 	if err != nil {
-		return nil, invalid("'from' parameter is not a valid address. please check documentation")
+		return nil, eventMeta{}, invalid("'from' parameter is not a valid address. please check documentation")
 	}
 	m := compose.Message{From: from, Subject: f.get("subject"), Text: f.get("text"), HTML: f.get("html")}
 	for _, field := range []struct {
@@ -144,18 +147,18 @@ func mailgunMessages(f form) ([]compose.Message, error) {
 		out  *[]*mail.Address
 	}{{"to", &m.To}, {"cc", &m.Cc}, {"bcc", &m.Bcc}} {
 		if *field.out, err = addresses(field.name, f.values[field.name]); err != nil {
-			return nil, invalid("'%s' parameter is not a valid address. please check documentation", field.name)
+			return nil, eventMeta{}, invalid("'%s' parameter is not a valid address. please check documentation", field.name)
 		}
 	}
 	if len(m.To) == 0 {
-		return nil, invalid("to parameter is missing")
+		return nil, eventMeta{}, invalid("to parameter is missing")
 	}
 	if tpl := f.get("template"); tpl != "" && m.Text == "" && m.HTML == "" {
 		var vars any
 		_ = json.Unmarshal([]byte(f.get("t:variables")), &vars)
 		m.Text = templateNote("Mailgun", tpl, vars)
 	} else if m.Text == "" && m.HTML == "" {
-		return nil, invalid("Need at least one of 'text', 'html' or 'template' parameters specified")
+		return nil, eventMeta{}, invalid("Need at least one of 'text', 'html' or 'template' parameters specified")
 	}
 
 	// h:X-Header adds a header; o:tag and v:var become the headers Mailgun
@@ -171,7 +174,7 @@ func mailgunMessages(f form) ([]compose.Message, error) {
 			switch {
 			case strings.EqualFold(k, "h:Reply-To"):
 				if m.ReplyTo, err = addresses("h:Reply-To", []string{v}); err != nil {
-					return nil, err
+					return nil, eventMeta{}, err
 				}
 			case strings.HasPrefix(k, "h:"):
 				m.Headers = append(m.Headers, compose.Header{Name: k[2:], Value: v})
@@ -182,6 +185,7 @@ func mailgunMessages(f form) ([]compose.Message, error) {
 			}
 		}
 	}
+	meta := eventMeta{tags: f.values["o:tag"], values: vars}
 	if len(vars) > 0 {
 		b, _ := json.Marshal(vars)
 		m.Headers = append(m.Headers, compose.Header{Name: "X-Mailgun-Variables", Value: string(b)})
@@ -191,7 +195,7 @@ func mailgunMessages(f form) ([]compose.Message, error) {
 		for _, fh := range f.files[field] {
 			data, err := readFile(fh)
 			if err != nil {
-				return nil, err
+				return nil, eventMeta{}, err
 			}
 			a := compose.Attachment{Filename: fh.Filename, ContentType: fh.Header.Get("Content-Type"), Data: data}
 			if field == "inline" {
@@ -205,11 +209,11 @@ func mailgunMessages(f form) ([]compose.Message, error) {
 	// own message with %recipient.key% filled in.
 	rv := f.get("recipient-variables")
 	if rv == "" {
-		return []compose.Message{m}, nil
+		return []compose.Message{m}, meta, nil
 	}
 	var perRecipient map[string]map[string]any
 	if err := json.Unmarshal([]byte(rv), &perRecipient); err != nil {
-		return nil, invalid("recipient-variables parameter is not a valid JSON")
+		return nil, eventMeta{}, invalid("recipient-variables parameter is not a valid JSON")
 	}
 	var out []compose.Message
 	for _, to := range m.To {
@@ -223,7 +227,7 @@ func mailgunMessages(f form) ([]compose.Message, error) {
 		}
 		out = append(out, one)
 	}
-	return out, nil
+	return out, meta, nil
 }
 
 func readFile(fh *multipart.FileHeader) ([]byte, error) {

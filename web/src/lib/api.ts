@@ -147,6 +147,43 @@ export type LinkResult = {
 /** Only the first 50 links are requested; total counts them all. */
 export type LinkResults = { results: LinkResult[]; total: number }
 
+/** An emulated provider (internal/emulate). */
+export type Provider = 'resend' | 'sendgrid' | 'postmark' | 'mailgun' | 'ses'
+
+/** Where Envry sends a provider's delivery events, and how they are signed. */
+export type WebhookConfig = {
+  provider: Provider
+  url: string
+  enabled: boolean
+  /** Resend's signing secret (whsec_...) or Mailgun's signing key; empty for the others. */
+  secret: string
+  /** SendGrid's public key (base64) for its signed event webhook. */
+  verificationKey: string
+  signing: 'svix' | 'ecdsa' | 'hmac' | 'none'
+}
+
+export type WebhookEvent = 'delivered' | 'bounced' | 'complained'
+
+/** One call to an app's webhook endpoint. */
+export type WebhookDelivery = {
+  id: number
+  provider: Provider
+  event: WebhookEvent
+  messageId: string
+  /** Empty when one call covers every recipient (SendGrid). */
+  recipient: string
+  url: string
+  /** HTTP status; 0 when no answer came. */
+  status: number
+  error: string
+  /** The start of the answer's body. */
+  response: string
+  durationMs: number
+  sentAt: string
+}
+
+export type WebhookSave = { url: string; enabled: boolean; secret?: string }
+
 export type SendRequest = {
   from: string
   to: string[]
@@ -246,6 +283,13 @@ export const api = {
 
   send: (body: SendRequest) =>
     request<{ id: string }>('/send', { method: 'POST', body: JSON.stringify(body) }),
+
+  webhooks: () => request<{ items: WebhookConfig[] }>('/webhooks'),
+  saveWebhook: (provider: Provider, body: WebhookSave) =>
+    request<WebhookConfig>(`/webhooks/${provider}`, { method: 'PUT', body: JSON.stringify(body) }),
+  testWebhook: (provider: Provider) =>
+    request<WebhookDelivery>(`/webhooks/${provider}/test`, { method: 'POST', body: '{}' }),
+  webhookDeliveries: () => request<{ items: WebhookDelivery[] }>('/webhooks/deliveries'),
 }
 
 /** URLs the browser loads directly (iframe, downloads). */

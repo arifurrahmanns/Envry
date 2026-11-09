@@ -1,14 +1,15 @@
 import { useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { invoke } from '@tauri-apps/api/core'
-import { Check, Copy, FlaskConical, Loader2, Lock, ShieldAlert, ShieldCheck } from 'lucide-react'
+import { FlaskConical, Loader2, Lock, ShieldAlert, ShieldCheck } from 'lucide-react'
 import { toast } from 'sonner'
 
+import { CopyButton } from '@/components/copy-button'
 import { PageHeader } from '@/components/layout/page-header'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { ProviderWebhooks } from '@/features/connect/provider-webhooks'
 import { api, type Info } from '@/lib/api'
 import { inDesktopApp } from '@/lib/desktop'
 import { keys, useInfo } from '@/lib/queries'
@@ -146,7 +147,7 @@ export function ConnectionPage() {
 
           <SettingsSection
             title="Send through a provider API"
-            description="Apps that send with the Resend, SendGrid, Postmark, Mailgun or Amazon SES SDK can point it at Envry instead. Any API key works, and nothing is sent."
+            description="Apps that send with the Resend, SendGrid, Postmark, Mailgun or Amazon SES SDK can point it at Envry instead. Any API key works, and nothing is sent. Envry can also call your app back with delivery events, as the provider would."
           >
             <div className="space-y-3">
               <div role="tablist" aria-label="Provider" className="flex flex-wrap gap-1">
@@ -173,6 +174,7 @@ export function ConnectionPage() {
                 </pre>
                 <CopyButton value={providers[provider].code(apiBase)} className="absolute top-2 right-2" />
               </div>
+              <ProviderWebhooks provider={provider} name={providers[provider].label} />
             </div>
           </SettingsSection>
         </div>
@@ -539,29 +541,4 @@ const ses = new SESv2Client({
 // Laravel: in config/services.php, add to 'ses':
 //   'endpoint' => '${base}/emulate/ses',`,
   },
-}
-
-function CopyButton({ value, className }: { value: string; className?: string }) {
-  const [copied, setCopied] = useState(false)
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className={cn('text-muted-foreground', className)}
-          aria-label="Copy"
-          onClick={() => {
-            void navigator.clipboard.writeText(value).then(() => {
-              setCopied(true)
-              window.setTimeout(() => setCopied(false), 1200)
-            })
-          }}
-        >
-          {copied ? <Check /> : <Copy />}
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent>{copied ? 'Copied' : 'Copy'}</TooltipContent>
-    </Tooltip>
-  )
 }

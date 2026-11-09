@@ -17,6 +17,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/arifurrahmanns/envry/internal/config"
+	"github.com/arifurrahmanns/envry/internal/emulate"
 	"github.com/arifurrahmanns/envry/internal/events"
 	"github.com/arifurrahmanns/envry/internal/store"
 	"github.com/arifurrahmanns/envry/internal/version"
@@ -31,6 +32,8 @@ type Server struct {
 
 	tls   *TLSInfo // nil unless TLS is enabled
 	ports *Ports   // bound ports, once known
+
+	webhooks *emulate.Webhooks // provider webhook settings and log
 
 	closeOnce sync.Once
 	closing   chan struct{}
@@ -112,6 +115,13 @@ func (s *Server) Routes() http.Handler {
 
 		r.Post("/send", s.handleSend)
 		r.Get("/wait", s.handleWait)
+
+		if s.webhooks != nil {
+			r.Get("/webhooks", s.handleListWebhooks)
+			r.Get("/webhooks/deliveries", s.handleWebhookDeliveries)
+			r.Put("/webhooks/{provider}", s.handleSaveWebhook)
+			r.Post("/webhooks/{provider}/test", s.handleTestWebhook)
+		}
 	})
 	return r
 }

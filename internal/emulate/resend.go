@@ -89,7 +89,11 @@ func (s *Server) resendSend(r *http.Request, e resendEmail) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return s.deliver(r.Context(), r, Resend, m)
+	tags := map[string]string{}
+	for _, t := range e.Tags {
+		tags[t.Name] = t.Value
+	}
+	return s.deliver(r.Context(), r, Resend, m, eventMeta{values: tags})
 }
 
 func resendMessage(e resendEmail) (compose.Message, error) {

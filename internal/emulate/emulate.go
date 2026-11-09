@@ -39,9 +39,10 @@ func Source(provider string) string { return store.SourceAPI + ":" + provider }
 
 // Server holds what the provider handlers share.
 type Server struct {
-	store   *store.Store
-	log     *slog.Logger
-	maxSize int64
+	store    *store.Store
+	log      *slog.Logger
+	maxSize  int64
+	webhooks *Webhooks
 }
 
 // New returns the emulator. maxSize caps a request body, as SMTP caps a
@@ -50,7 +51,7 @@ func New(st *store.Store, log *slog.Logger, maxSize int64) *Server {
 	if maxSize <= 0 {
 		maxSize = 25 << 20
 	}
-	return &Server{store: st, log: log, maxSize: maxSize + maxSize/3 + 1<<20}
+	return &Server{store: st, log: log, maxSize: maxSize + maxSize/3 + 1<<20, webhooks: newWebhooks(st, log)}
 }
 
 // Routes returns the router to mount at /emulate: each provider's API
@@ -72,16 +73,17 @@ func (s *Server) Routes() http.Handler {
 }
 
 // deliver builds a message and captures it as sent through provider.
-func (s *Server) deliver(ctx context.Context, r *http.Request, provider string, m compose.Message) (string, error) {
+func (s *Server) deliver(ctx context.Context, r *http.Request, provider string, m compose.Message, meta eventMeta) (string, error) {
 	raw, err := compose.Build(m)
 	if err != nil {
 		return "", err
 	}
-	return s.capture(ctx, r, provider, m.From.Address, m.Recipients(), raw)
+	return s.capture(ctx, r, provider, m.From.Address, m.Recipients(), raw, meta)
 }
 
-// capture stores a raw message with its envelope.
-func (s *Server) capture(ctx context.Context, r *http.Request, provider, from string, rcpts []string, raw []byte) (string, error) {
+// capture stores a raw message with its envelope and schedules its
+// delivery events; meta is what the app attached for them.
+func (s *Server) capture(ctx context.Context, r *http.Request, provider, from string, rcpts []string, raw []byte, meta eventMeta) (string, error) {
 	ip, _, _ := net.SplitHostPort(r.RemoteAddr)
 	sum, err := s.store.Ingest(ctx, store.IngestInput{
 		EnvelopeFrom: from,
@@ -94,6 +96,14 @@ func (s *Server) capture(ctx context.Context, r *http.Request, provider, from st
 		return "", err
 	}
 	s.log.Debug("captured provider API message", "provider", provider, "id", sum.ID)
+	header := sum.From.Address
+	if sum.From.Name != "" {
+		header = (&mail.Address{Name: sum.From.Name, Address: sum.From.Address}).String()
+	}
+	s.webhooks.afterSend(sentMessage{
+		provider: provider, id: sum.ID, from: header, sender: from, subject: sum.Subject,
+		to: rcpts, at: sum.ReceivedAt, size: sum.Size, meta: meta,
+	})
 	return sum.ID, nil
 }
 
@@ -104,6 +114,10 @@ type errInvalid struct{ msg string }
 func (e errInvalid) Error() string { return e.msg }
 
 func invalid(format string, args ...any) error { return errInvalid{fmt.Sprintf(format, args...)} }
+
+// IsInvalid reports an error in what was asked (an invalid request or
+// setting), as opposed to Envry failing.
+func IsInvalid(err error) bool { return isInvalid(err) }
 
 // isInvalid reports a request error (as opposed to Envry failing).
 func isInvalid(err error) bool {

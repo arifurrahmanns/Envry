@@ -29,6 +29,7 @@ type sgPersonalization struct {
 	Headers             map[string]string `json:"headers"`
 	Substitutions       map[string]string `json:"substitutions"`
 	DynamicTemplateData map[string]any    `json:"dynamic_template_data"`
+	CustomArgs          map[string]string `json:"custom_args"`
 }
 
 type sgMail struct {
@@ -51,6 +52,7 @@ type sgMail struct {
 	TemplateID string            `json:"template_id"`
 	Headers    map[string]string `json:"headers"`
 	Categories []string          `json:"categories"`
+	CustomArgs map[string]string `json:"custom_args"`
 }
 
 func (s *Server) sendgridRoutes(r chi.Router) {
@@ -60,14 +62,14 @@ func (s *Server) sendgridRoutes(r chi.Router) {
 			s.sendgridError(w, err, "")
 			return
 		}
-		msgs, field, err := sendgridMessages(req)
+		msgs, metas, field, err := sendgridMessages(req)
 		if err != nil {
 			s.sendgridError(w, err, field)
 			return
 		}
 		var first string
-		for _, m := range msgs {
-			id, err := s.deliver(r.Context(), r, SendGrid, m)
+		for i, m := range msgs {
+			id, err := s.deliver(r.Context(), r, SendGrid, m, metas[i])
 			if err != nil {
 				s.sendgridError(w, err, "")
 				return
@@ -82,11 +84,12 @@ func (s *Server) sendgridRoutes(r chi.Router) {
 	})
 }
 
-// sendgridMessages returns one message per personalization, or the error
-// and the field it is about.
-func sendgridMessages(req sgMail) ([]compose.Message, string, error) {
+// sendgridMessages returns one message per personalization with what its
+// events echo (categories and custom arguments), or the error and the
+// field it is about.
+func sendgridMessages(req sgMail) ([]compose.Message, []eventMeta, string, error) {
 	if len(req.Personalizations) == 0 {
-		return nil, "personalizations", invalid("The personalizations field is required and must have at least one personalization.")
+		return nil, nil, "personalizations", invalid("The personalizations field is required and must have at least one personalization.")
 	}
 	var text, html string
 	for _, c := range req.Content {
@@ -98,7 +101,7 @@ func sendgridMessages(req sgMail) ([]compose.Message, string, error) {
 		}
 	}
 	if text == "" && html == "" && req.TemplateID == "" {
-		return nil, "content", invalid("Unless a valid template_id is provided, the content parameter is required.")
+		return nil, nil, "content", invalid("Unless a valid template_id is provided, the content parameter is required.")
 	}
 
 	var replyTo []*mail.Address
@@ -112,7 +115,7 @@ func sendgridMessages(req sgMail) ([]compose.Message, string, error) {
 	for i, a := range req.Attachments {
 		data, err := decodeBase64(a.Content)
 		if err != nil {
-			return nil, fmt.Sprintf("attachments.%d.content", i), invalid("The attachment content must be base64 encoded.")
+			return nil, nil, fmt.Sprintf("attachments.%d.content", i), invalid("The attachment content must be base64 encoded.")
 		}
 		f := compose.Attachment{Filename: a.Filename, ContentType: a.Type, Data: data}
 		if strings.EqualFold(a.Disposition, "inline") {
@@ -126,20 +129,21 @@ func sendgridMessages(req sgMail) ([]compose.Message, string, error) {
 	}
 
 	var out []compose.Message
+	var metas []eventMeta
 	for i, p := range req.Personalizations {
 		from := req.From
 		if p.From != nil && p.From.Email != "" {
 			from = p.From
 		}
 		if from == nil || from.Email == "" {
-			return nil, "from.email", invalid("The from email does not contain a valid address.")
+			return nil, nil, "from.email", invalid("The from email does not contain a valid address.")
 		}
 		if len(p.To) == 0 {
-			return nil, fmt.Sprintf("personalizations.%d.to", i), invalid("The to array is required for all personalization objects, and must have at least one email object with a valid email address.")
+			return nil, nil, fmt.Sprintf("personalizations.%d.to", i), invalid("The to array is required for all personalization objects, and must have at least one email object with a valid email address.")
 		}
 		fromAddr, err := address("from", sgFormat(*from))
 		if err != nil {
-			return nil, "from.email", invalid("The from email does not contain a valid address.")
+			return nil, nil, "from.email", invalid("The from email does not contain a valid address.")
 		}
 		m := compose.Message{From: fromAddr, ReplyTo: replyTo, Attachments: files}
 		for _, list := range []struct {
@@ -150,7 +154,7 @@ func sendgridMessages(req sgMail) ([]compose.Message, string, error) {
 			for j, a := range list.in {
 				parsed, err := address(list.field, sgFormat(a))
 				if err != nil {
-					return nil, fmt.Sprintf("personalizations.%d.%s.%d.email", i, list.field, j), invalid("Does not contain a valid address.")
+					return nil, nil, fmt.Sprintf("personalizations.%d.%s.%d.email", i, list.field, j), invalid("Does not contain a valid address.")
 				}
 				*list.out = append(*list.out, parsed)
 			}
@@ -178,8 +182,16 @@ func sendgridMessages(req sgMail) ([]compose.Message, string, error) {
 		}
 		m.Headers = append(headerList(headers), categories...)
 		out = append(out, m)
+		args := map[string]string{}
+		for k, v := range req.CustomArgs {
+			args[k] = v
+		}
+		for k, v := range p.CustomArgs {
+			args[k] = v
+		}
+		metas = append(metas, eventMeta{tags: req.Categories, values: args})
 	}
-	return out, "", nil
+	return out, metas, "", nil
 }
 
 func sgFormat(a sgAddress) string {
