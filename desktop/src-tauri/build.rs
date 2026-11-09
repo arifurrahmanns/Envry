@@ -11,6 +11,8 @@ fn main() {
             "set_tls",
             "certificate_status",
             "trust_certificate",
+            "update_status",
+            "install_update",
         ]),
     ))
     .expect("failed to run tauri-build");

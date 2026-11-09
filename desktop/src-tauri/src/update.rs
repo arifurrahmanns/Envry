@@ -11,7 +11,8 @@ use std::sync::{Mutex, MutexGuard};
 use std::thread;
 use std::time::Duration;
 
-use tauri::{AppHandle, Manager};
+use serde::Serialize;
+use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_updater::{Update, UpdaterExt};
 
@@ -23,7 +24,10 @@ const CHECK_EVERY: Duration = Duration::from_secs(6 * 60 * 60);
 /// The id of the "update ready" notification; clicking it installs.
 pub const NOTIFICATION_ID: i32 = i32::MAX;
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+/// The updater's state, also sent to the web UI as the "update-status"
+/// event: {"state":"ready","version":"0.2.3"}, or {"state":"idle"}.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[serde(tag = "state", content = "version", rename_all = "camelCase")]
 pub enum Status {
     #[default]
     Idle,
@@ -50,9 +54,23 @@ impl Updates {
     }
 
     fn set(&self, app: &AppHandle, status: Status) {
-        *lock(&self.status) = status;
+        *lock(&self.status) = status.clone();
         crate::tray::refresh(app);
+        // The web UI's update notice (web/src/hooks/use-app-update.ts).
+        let _ = app.emit("update-status", status);
     }
+}
+
+/// The updater's state, for the web UI's update notice.
+#[tauri::command]
+pub fn update_status(app: AppHandle) -> Status {
+    app.state::<Updates>().status()
+}
+
+/// "Restart to update" in the web UI.
+#[tauri::command]
+pub fn install_update(app: AppHandle) {
+    install(&app);
 }
 
 /// Starts the background checks. Builds made with `tauri dev` (debug) only
@@ -174,4 +192,24 @@ fn notify_ready(app: &AppHandle, version: &str) {
 
 fn notify(app: &AppHandle, title: &str, body: &str) {
     let _ = app.notification().builder().title(title).body(body).show();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The shape web/src/hooks/use-app-update.ts reads.
+    #[test]
+    fn status_as_json() {
+        let json = |s: Status| serde_json::to_string(&s).unwrap();
+        assert_eq!(json(Status::Idle), r#"{"state":"idle"}"#);
+        assert_eq!(
+            json(Status::Ready("0.2.3".into())),
+            r#"{"state":"ready","version":"0.2.3"}"#
+        );
+        assert_eq!(
+            json(Status::Downloading("0.2.3".into())),
+            r#"{"state":"downloading","version":"0.2.3"}"#
+        );
+    }
 }

@@ -6,6 +6,7 @@ import type { LucideIcon } from 'lucide-react'
 import { Logo } from '@/components/layout/logo'
 import { SearchBox } from '@/components/layout/search-box'
 import { useShell } from '@/components/layout/shell-context'
+import { UpdateNotice } from '@/components/layout/update-notice'
 import { SenderAvatar } from '@/components/mail/sender-avatar'
 import { useTheme, type Theme } from '@/components/theme-provider'
 import {
@@ -156,6 +157,7 @@ export function SidebarContent({ collapsed = false, onToggle, onNavigate, marker
         </div>
       </div>
 
+      <UpdateNotice collapsed={collapsed} />
       <LiveStatus collapsed={collapsed} />
     </div>
   )

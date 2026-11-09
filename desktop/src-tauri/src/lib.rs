@@ -97,6 +97,8 @@ pub fn run() {
             commands::set_tls,
             certificate::certificate_status,
             certificate::trust_certificate,
+            update::update_status,
+            update::install_update,
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
