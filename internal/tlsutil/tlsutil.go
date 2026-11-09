@@ -77,7 +77,10 @@ func Load(opts Options) (*Result, error) {
 	if opts.Dir != "" {
 		certPath, keyPath := filepath.Join(opts.Dir, CertFile), filepath.Join(opts.Dir, KeyFile)
 		if pair, err := tls.LoadX509KeyPair(certPath, keyPath); err == nil {
-			if leaf, err := x509.ParseCertificate(pair.Certificate[0]); err == nil && leaf.NotAfter.Sub(opts.Now()) > renewBefore {
+			// Older versions generated a certificate authority; it is replaced
+			// by a server-only certificate before anyone is asked to trust it.
+			if leaf, err := x509.ParseCertificate(pair.Certificate[0]); err == nil && !leaf.IsCA &&
+				leaf.NotAfter.Sub(opts.Now()) > renewBefore {
 				return result(pair, true, false, certPath)
 			}
 		}
@@ -136,7 +139,9 @@ func Fingerprint(cert *x509.Certificate) string {
 }
 
 // generate creates a self-signed ECDSA P-256 certificate for the names a
-// local mail client is likely to connect with.
+// local mail client is likely to connect with. It is a server certificate,
+// not a certificate authority: once trusted on a computer (so apps that
+// check certificates accept Envry) it vouches for nothing but Envry itself.
 func generate(now time.Time) (certPEM, keyPEM []byte, err error) {
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
@@ -156,10 +161,10 @@ func generate(now time.Time) (certPEM, keyPEM []byte, err error) {
 		Subject:               pkix.Name{CommonName: "Envry local mail server", Organization: []string{"Envry"}},
 		NotBefore:             now.Add(-time.Hour),
 		NotAfter:              now.Add(validity),
-		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
+		KeyUsage:              x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		BasicConstraintsValid: true,
-		IsCA:                  true,
+		IsCA:                  false,
 		DNSNames:              dns,
 		IPAddresses:           []net.IP{net.IPv4(127, 0, 0, 1), net.IPv6loopback},
 	}
