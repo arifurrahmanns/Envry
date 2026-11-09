@@ -8,7 +8,8 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 
 /// The ports Envry listens on. The server binds every interface, like the
-/// CLI does, so containers and other machines can reach it.
+/// CLI does, so containers and other machines can reach it. The SSL/TLS
+/// ports (implicit TLS) are only opened when secure connections are on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Ports {
@@ -16,6 +17,9 @@ pub struct Ports {
     pub pop3: u16,
     pub imap: u16,
     pub http: u16,
+    pub smtps: u16,
+    pub pop3s: u16,
+    pub imaps: u16,
 }
 
 impl Default for Ports {
@@ -25,24 +29,36 @@ impl Default for Ports {
             pop3: 1110,
             imap: 1143,
             http: 8025,
+            smtps: 1465,
+            pop3s: 1995,
+            imaps: 1993,
         }
     }
 }
 
 impl Ports {
-    /// Each service with its port, in the order Envry opens them.
-    pub fn services(&self) -> [(&'static str, u16); 4] {
-        [
+    /// Each service Envry opens with its port, in the order it opens them;
+    /// the SSL/TLS ones only with `tls`.
+    pub fn services(&self, tls: bool) -> Vec<(&'static str, u16)> {
+        let mut list = vec![
             ("smtp", self.smtp),
             ("pop3", self.pop3),
             ("imap", self.imap),
             ("http", self.http),
-        ]
+        ];
+        if tls {
+            list.extend([
+                ("smtps", self.smtps),
+                ("pop3s", self.pop3s),
+                ("imaps", self.imaps),
+            ]);
+        }
+        list
     }
 
     /// Rejects port 0 and two services sharing a port.
-    pub fn validate(&self) -> Result<(), String> {
-        let list = self.services();
+    pub fn validate(&self, tls: bool) -> Result<(), String> {
+        let list = self.services(tls);
         for (i, (name, port)) in list.iter().enumerate() {
             if *port == 0 {
                 return Err(format!(
@@ -66,6 +82,9 @@ impl Ports {
 #[serde(default, rename_all = "camelCase")]
 pub struct Settings {
     pub ports: Ports,
+    /// Secure connections: STARTTLS on the usual ports plus the SSL/TLS
+    /// ports, with a certificate Envry generates.
+    pub tls: bool,
     pub notifications: bool,
     /// Whether the "still running in the tray" hint was shown once.
     pub tray_hint_shown: bool,
@@ -75,6 +94,7 @@ impl Default for Settings {
     fn default() -> Self {
         Settings {
             ports: Ports::default(),
+            tls: false,
             notifications: true,
             tray_hint_shown: false,
         }
@@ -136,20 +156,30 @@ mod tests {
 
     #[test]
     fn validate_ports() {
-        assert!(Ports::default().validate().is_ok());
+        assert!(Ports::default().validate(true).is_ok());
         let shared = Ports {
             imap: 1025,
             ..Ports::default()
         };
         assert_eq!(
-            shared.validate().unwrap_err(),
+            shared.validate(false).unwrap_err(),
             "SMTP and IMAP cannot share port 1025"
         );
         let zero = Ports {
             http: 0,
             ..Ports::default()
         };
-        assert!(zero.validate().is_err());
+        assert!(zero.validate(false).is_err());
+        // SSL/TLS ports only count when secure connections are on.
+        let tls_clash = Ports {
+            smtps: 1025,
+            ..Ports::default()
+        };
+        assert!(tls_clash.validate(false).is_ok());
+        assert_eq!(
+            tls_clash.validate(true).unwrap_err(),
+            "SMTP and SMTPS cannot share port 1025"
+        );
     }
 
     #[test]

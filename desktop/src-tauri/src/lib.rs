@@ -1,6 +1,7 @@
 //! Envry desktop app: runs the bundled Envry server, shows its web UI and
 //! keeps a tray icon with its status and new mail.
 
+mod certificate;
 mod commands;
 mod mail;
 mod server;
@@ -87,17 +88,19 @@ pub fn run() {
         .manage(Server::default())
         .manage(mail)
         .manage(update::Updates::default())
+        .manage(window::LastPage::default())
         .invoke_handler(tauri::generate_handler![
             commands::get_status,
             commands::start_server,
             commands::save_ports,
             commands::open_log,
+            commands::set_tls,
+            certificate::certificate_status,
+            certificate::trust_certificate,
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
-            let settings = settings::load(&handle);
-            let ports = settings.ports;
-            app.manage::<settings::State>(Mutex::new(settings));
+            app.manage::<settings::State>(Mutex::new(settings::load(&handle)));
 
             if let Ok(dir) = app.path().app_log_dir() {
                 let log = dir.join("envry.log");
@@ -126,7 +129,7 @@ pub fn run() {
             tauri::async_runtime::spawn(mail::notifier(handle.clone(), queue));
             update::start(&handle);
 
-            app.state::<Server>().start(&handle, ports);
+            app.state::<Server>().start(&handle);
             Ok(())
         })
         .on_window_event(|w, ev| match ev {

@@ -30,10 +30,11 @@ pub struct Holder {
     pub name: Option<String>,
 }
 
-/// Returns the ports Envry cannot open, with what is known about each.
-pub fn check(ports: &Ports) -> Vec<Busy> {
+/// Returns the ports Envry cannot open, with what is known about each;
+/// the SSL/TLS ports count only with `tls`.
+pub fn check(ports: &Ports, tls: bool) -> Vec<Busy> {
     ports
-        .services()
+        .services(tls)
         .into_iter()
         .filter_map(|(service, port)| {
             let reason = bind_error(port)?;

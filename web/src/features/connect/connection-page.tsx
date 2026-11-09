@@ -1,31 +1,34 @@
 import { useState, type ReactNode } from 'react'
-import { Check, Copy, FlaskConical, Lock } from 'lucide-react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { invoke } from '@tauri-apps/api/core'
+import { Check, Copy, FlaskConical, Loader2, Lock, ShieldAlert, ShieldCheck } from 'lucide-react'
+import { toast } from 'sonner'
 
 import { PageHeader } from '@/components/layout/page-header'
 import { Button } from '@/components/ui/button'
+import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import type { Info } from '@/lib/api'
-import { useInfo } from '@/lib/queries'
+import { api, type Info } from '@/lib/api'
+import { inDesktopApp } from '@/lib/desktop'
+import { keys, useInfo } from '@/lib/queries'
 import { cn } from '@/lib/utils'
 
 /**
  * Where to point apps and mail clients, laid out like a mail client's
- * account settings: outgoing and incoming servers with copyable fields,
- * then TLS, failure simulation and ready-made code.
+ * account settings: secure connections, outgoing and incoming servers,
+ * then failure simulation and ready-made code.
  */
 export function ConnectionPage() {
   const { data } = useInfo()
   const host = window.location.hostname || 'localhost'
   const ports = data?.ports ?? { smtp: 1025, pop3: 1110, imap: 1143, http: 8025, smtps: 0, pop3s: 0, imaps: 0 }
   const tls = data?.tls
+  const tlsOn = tls?.enabled ?? false
   const chaos = failureSimulation(data?.settings)
   const strict = data?.settings.strictAuth ?? false
   const creds = credentials(strict)
   const [lang, setLang] = useState<keyof typeof snippets>('node')
-
-  const security = (implicitPort: number, starttls = 'STARTTLS') =>
-    tls?.enabled ? `${starttls}, or TLS on port ${implicitPort}` : 'None'
-  const password = strict ? 'The account password' : 'Anything'
 
   return (
     <>
@@ -33,64 +36,70 @@ export function ConnectionPage() {
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="max-w-5xl px-5 md:px-8">
           <SettingsSection
+            title="Secure connections (TLS)"
+            description={
+              tlsOn
+                ? 'On: STARTTLS works on the usual ports, and each protocol below also has its own SSL/TLS port.'
+                : 'Off: mail clients connect without encryption. Turn it on to test STARTTLS and SSL/TLS like a production mail server.'
+            }
+          >
+            <div className="space-y-4">
+              {inDesktopApp ? (
+                <TlsSwitch on={tlsOn} />
+              ) : (
+                !tlsOn && (
+                  <p className="text-sm text-muted-foreground">
+                    Start Envry with <code className="font-mono text-foreground/80">--tls</code> to turn them on.
+                  </p>
+                )
+              )}
+              {tlsOn && tls?.fingerprint && (
+                <div className="flex items-start gap-3 rounded-lg border px-4 py-3">
+                  <Lock className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <p className="text-sm">
+                      {tls.selfSigned
+                        ? 'Envry made its own certificate and keeps the same one across restarts. Mail clients ask you to accept it once.'
+                        : 'Certificate loaded from --tls-cert.'}
+                    </p>
+                    <p className="font-mono text-xs break-all text-muted-foreground">SHA-256 {tls.fingerprint}</p>
+                  </div>
+                  <CopyButton value={tls.fingerprint} />
+                </div>
+              )}
+              {inDesktopApp && tlsOn && tls?.selfSigned && tls.fingerprint && (
+                <CertificateTrust fingerprint={tls.fingerprint} />
+              )}
+            </div>
+          </SettingsSection>
+
+          <ServerSection
             title="Outgoing mail (SMTP)"
             description="Point your app's mailer here. Envry keeps every message it receives and never delivers anything."
-          >
-            <Fields>
-              <Field label="Server" value={host} copy />
-              <Field label="Port" value={String(ports.smtp)} copy />
-              <Field label="Security" value={security(ports.smtps)} />
-              <Field
-                label="Username"
-                value={strict ? 'A test account address' : 'Anything'}
-                hint={strict ? undefined : 'Or none, if your app allows it'}
-              />
-              <Field label="Password" value={password} />
-            </Fields>
-          </SettingsSection>
-
-          <SettingsSection
+            host={host}
+            port={ports.smtp}
+            tlsPort={tlsOn ? ports.smtps : 0}
+            strict={strict}
+          />
+          <ServerSection
             title="Incoming mail (IMAP)"
             description="Read any mailbox in a mail client such as Thunderbird or Apple Mail: folders, flags and search."
-          >
-            <Fields>
-              <Field label="Server" value={host} copy />
-              <Field label="Port" value={String(ports.imap)} copy />
-              <Field label="Security" value={security(ports.imaps)} />
-              <Field label="Username" value="dev@test.local" hint="Any mailbox address" copy />
-              <Field label="Password" value={password} />
-            </Fields>
-          </SettingsSection>
-
-          <SettingsSection
+            host={host}
+            port={ports.imap}
+            tlsPort={tlsOn ? ports.imaps : 0}
+            strict={strict}
+            mailbox
+          />
+          <ServerSection
             title="Incoming mail (POP3)"
             description="For clients and libraries that download mail and delete it from the server."
-          >
-            <Fields>
-              <Field label="Server" value={host} copy />
-              <Field label="Port" value={String(ports.pop3)} copy />
-              <Field label="Security" value={security(ports.pop3s, 'STLS')} />
-              <Field label="Username" value="dev@test.local" hint="Any mailbox address" copy />
-              <Field label="Password" value={password} />
-            </Fields>
-          </SettingsSection>
-
-          {tls?.enabled && tls.fingerprint && (
-            <SettingsSection
-              title="Certificate"
-              description={
-                tls.selfSigned
-                  ? 'Self-signed. Accept it once when your mail client asks; Envry keeps the same one across restarts.'
-                  : 'Loaded from --tls-cert.'
-              }
-            >
-              <div className="flex items-start gap-3 rounded-lg border px-4 py-3">
-                <Lock className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-                <p className="min-w-0 flex-1 font-mono text-xs break-all text-muted-foreground">SHA-256 {tls.fingerprint}</p>
-                <CopyButton value={tls.fingerprint} />
-              </div>
-            </SettingsSection>
-          )}
+            host={host}
+            port={ports.pop3}
+            tlsPort={tlsOn ? ports.pop3s : 0}
+            starttls="STLS"
+            strict={strict}
+            mailbox
+          />
 
           {chaos.length > 0 && (
             <SettingsSection title="Failure simulation" description="Envry is set up to refuse or delay some mail.">
@@ -138,6 +147,165 @@ export function ConnectionPage() {
   )
 }
 
+/**
+ * One protocol's settings as a mail client asks for them: server and port,
+ * how the connection is secured, and how to sign in. `tlsPort` is 0 when
+ * secure connections are off; `mailbox` is for IMAP and POP3, where the
+ * username picks the mailbox to read.
+ */
+function ServerSection({
+  title,
+  description,
+  host,
+  port,
+  tlsPort,
+  starttls = 'STARTTLS',
+  strict,
+  mailbox = false,
+}: {
+  title: string
+  description: string
+  host: string
+  port: number
+  tlsPort: number
+  starttls?: string
+  strict: boolean
+  mailbox?: boolean
+}) {
+  const offHint = inDesktopApp ? 'Turn on secure connections above.' : 'Start Envry with --tls to use it.'
+  let note: string
+  if (strict) {
+    note = 'Strict authentication is on: sign in with a test account’s address and password.'
+  } else if (mailbox) {
+    note = 'Sign in with the address of the mailbox you want to read. Envry accepts any password.'
+  } else {
+    note = 'Envry accepts any username and password. Use the ones your app already has, or leave them empty.'
+  }
+
+  return (
+    <SettingsSection title={title} description={description}>
+      <Fields>
+        <Field label="Server" value={host} copy />
+        {/* The same fields, each with one line of hint, whether secure connections are on or off. */}
+        <Field label="Port" value={String(port)} copy hint={tlsPort ? `Security: None or ${starttls}` : 'Security: None'} />
+        {tlsPort ? (
+          <Field label="SSL/TLS port" value={String(tlsPort)} copy hint="Security: SSL/TLS" />
+        ) : (
+          <Field label="SSL/TLS port" placeholder="Off" hint={offHint} />
+        )}
+        <div aria-hidden className="hidden sm:block" />
+        {mailbox && !strict ? (
+          <Field label="Username" value="dev@test.local" copy hint="Any mailbox address" />
+        ) : (
+          <Field label="Username" placeholder={strict ? 'A test account address' : 'Not checked'} />
+        )}
+        <Field label="Password" placeholder={strict ? 'The account’s password' : 'Not checked'} />
+        <p className="text-[12px] text-muted-foreground sm:col-span-2">{note}</p>
+      </Fields>
+    </SettingsSection>
+  )
+}
+
+/**
+ * Turns secure connections on or off in the desktop app. Envry restarts with
+ * the new setting while this page stays open: the switch shows the new state
+ * at once, and the page updates when Envry is back.
+ */
+function TlsSwitch({ on }: { on: boolean }) {
+  const qc = useQueryClient()
+  // The state asked for, while Envry restarts with it.
+  const [target, setTarget] = useState<boolean | null>(null)
+  const toggle = async (next: boolean) => {
+    setTarget(next)
+    try {
+      await invoke('set_tls', { enabled: next })
+      qc.setQueryData(keys.info, await restartedWithTls(next))
+    } catch (e) {
+      toast.error('Couldn’t change secure connections', {
+        description: e instanceof Error ? e.message : String(e),
+      })
+    } finally {
+      setTarget(null)
+    }
+  }
+  return (
+    <div className="flex items-center gap-3 rounded-lg border px-4 py-3">
+      <Switch
+        id="tls-switch"
+        checked={target ?? on}
+        disabled={target !== null}
+        onCheckedChange={(v) => void toggle(v)}
+      />
+      <Label htmlFor="tls-switch" className="flex-1 font-normal">
+        {target !== null ? 'Restarting Envry…' : on ? 'Secure connections are on' : 'Secure connections are off'}
+      </Label>
+      {target !== null && <Loader2 className="size-4 animate-spin text-muted-foreground" />}
+    </div>
+  )
+}
+
+/** What the desktop app knows about this computer's trust in Envry's certificate. */
+type CertificateStatus = { path: string; trusted: boolean | null; canTrust: boolean }
+
+/**
+ * Whether this computer trusts Envry's certificate. Apps that check
+ * certificates, as most mail libraries do, refuse the SSL/TLS ports and
+ * STARTTLS until it does; trusting it adds it to the user's certificates
+ * after the system asks to confirm.
+ */
+function CertificateTrust({ fingerprint }: { fingerprint: string }) {
+  const status = useQuery({
+    queryKey: ['certificate', fingerprint],
+    queryFn: () => invoke<CertificateStatus>('certificate_status'),
+  })
+  const trust = useMutation({
+    mutationFn: () => invoke('trust_certificate'),
+    onSuccess: () => void status.refetch(),
+    onError: (e) => toast.error('Certificate not trusted', { description: String(e) }),
+  })
+  if (!status.data) return null
+  const { trusted, canTrust, path } = status.data
+  let text: string
+  if (trusted) {
+    text = 'Trusted on this computer: apps that check certificates connect without warnings.'
+  } else if (canTrust) {
+    text = 'Not trusted on this computer. Apps that check certificates, as most mail libraries do, refuse to connect until you trust it.'
+  } else {
+    text = `Apps that check certificates refuse to connect until you add ${path} to your system’s trusted certificates.`
+  }
+  return (
+    <div className="flex items-center gap-3 rounded-lg border px-4 py-3">
+      {trusted ? (
+        <ShieldCheck className="size-4 shrink-0 text-success" />
+      ) : (
+        <ShieldAlert className="size-4 shrink-0 text-warning" />
+      )}
+      <p className="min-w-0 flex-1 text-sm">{text}</p>
+      {!trusted && canTrust && (
+        <Button size="sm" disabled={trust.isPending} onClick={() => trust.mutate()}>
+          {trust.isPending && <Loader2 className="animate-spin" />}
+          Trust certificate
+        </Button>
+      )}
+    </div>
+  )
+}
+
+/** Waits for Envry to come back from its restart with secure connections on or off. */
+async function restartedWithTls(enabled: boolean): Promise<Info> {
+  const deadline = Date.now() + 20_000
+  for (;;) {
+    try {
+      const info = await api.info()
+      if (info.tls.enabled === enabled) return info
+    } catch {
+      // Still restarting.
+    }
+    if (Date.now() > deadline) throw new Error('Envry did not come back after restarting.')
+    await new Promise((resolve) => setTimeout(resolve, 300))
+  }
+}
+
 /** A settings group: title and explanation on the left, its fields on the right. */
 function SettingsSection({ title, description, children }: { title: string; description: string; children: ReactNode }) {
   return (
@@ -155,14 +323,34 @@ function Fields({ children }: { children: ReactNode }) {
   return <div className="grid gap-4 sm:grid-cols-2">{children}</div>
 }
 
-/** A read-only setting shown like a form field, optionally with a copy button. */
-function Field({ label, value, hint, copy = false }: { label: string; value: string; hint?: string; copy?: boolean }) {
+/**
+ * A read-only setting shown like a form field. With `copy` it has a copy
+ * button; with `placeholder` instead of a value it looks empty, for
+ * settings that take no particular value.
+ */
+function Field({
+  label,
+  value,
+  placeholder,
+  hint,
+  copy = false,
+}: {
+  label: string
+  value?: string
+  placeholder?: string
+  hint?: string
+  copy?: boolean
+}) {
   return (
     <div className="min-w-0 space-y-1.5">
       <div className="text-[12px] font-medium text-muted-foreground">{label}</div>
       <div className="flex h-9 items-center gap-2 rounded-lg border bg-muted/30 pr-1 pl-3">
-        <span className={cn('min-w-0 flex-1 truncate text-[13px]', copy && 'font-mono')}>{value}</span>
-        {copy && <CopyButton value={value} className="size-7" />}
+        {value !== undefined ? (
+          <span className={cn('min-w-0 flex-1 truncate text-[13px]', copy && 'font-mono')}>{value}</span>
+        ) : (
+          <span className="min-w-0 flex-1 truncate text-[13px] text-muted-foreground/70">{placeholder}</span>
+        )}
+        {copy && value !== undefined && <CopyButton value={value} className="size-7" />}
       </div>
       {hint && <p className="text-[12px] text-muted-foreground">{hint}</p>}
     </div>

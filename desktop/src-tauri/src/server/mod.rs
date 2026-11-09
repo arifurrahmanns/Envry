@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 
 use self::ports::Busy;
-use crate::settings::Ports;
+use crate::settings::{self, Ports};
 
 const STOP_TIMEOUT: Duration = Duration::from_secs(5);
 const LOG_TAIL: usize = 30;
@@ -69,6 +69,10 @@ struct Addrs {
     smtp: String,
     pop3: String,
     imap: String,
+    /// The SSL/TLS ports, sent only when secure connections are on.
+    smtps: Option<String>,
+    pop3s: Option<String>,
+    imaps: Option<String>,
 }
 
 #[derive(Default)]
@@ -78,6 +82,9 @@ struct Inner {
     child: Option<Child>,
     stdin: Option<ChildStdin>,
     stopping: bool,
+    /// Set by `restart` until the new run is up or has failed, so the
+    /// window keeps its page instead of showing the status page meanwhile.
+    quiet: bool,
     last_error: Option<StatusLine>,
     phase: Phase,
 }
@@ -112,20 +119,28 @@ impl Server {
         lock(&self.inner).phase.clone()
     }
 
+    /// Whether Envry is restarting on request (see `restart`).
+    pub fn restarting(&self) -> bool {
+        lock(&self.inner).quiet
+    }
+
     fn set_phase(&self, app: &AppHandle, gen: u64, phase: Phase) {
         {
             let mut i = lock(&self.inner);
             if i.gen != gen {
                 return;
             }
+            if !matches!(phase, Phase::Stopped | Phase::Starting) {
+                i.quiet = false;
+            }
             i.phase = phase;
         }
         crate::phase_changed(app);
     }
 
-    /// Checks the ports and starts Envry in the background. Does nothing
-    /// while a server is starting or running.
-    pub fn start(&self, app: &AppHandle, ports: Ports) {
+    /// Checks the ports and starts Envry in the background with the current
+    /// settings. Does nothing while a server is starting or running.
+    pub fn start(&self, app: &AppHandle) {
         let gen = {
             let mut i = lock(&self.inner);
             if i.child.is_some() || matches!(i.phase, Phase::Starting) {
@@ -139,11 +154,13 @@ impl Server {
         };
         crate::phase_changed(app);
         let app = app.clone();
-        thread::spawn(move || app.state::<Server>().launch(&app, gen, ports));
+        thread::spawn(move || app.state::<Server>().launch(&app, gen));
     }
 
-    fn launch(&self, app: &AppHandle, gen: u64, ports: Ports) {
-        let busy = ports::check(&ports);
+    fn launch(&self, app: &AppHandle, gen: u64) {
+        let settings = settings::get(app);
+        let (ports, tls) = (settings.ports, settings.tls);
+        let busy = ports::check(&ports, tls);
         if !busy.is_empty() {
             self.set_phase(app, gen, Phase::Conflict { busy });
             return;
@@ -160,6 +177,14 @@ impl Server {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
+        if tls {
+            // STARTTLS on the ports above, plus the SSL/TLS ports. Envry makes
+            // and keeps a self-signed certificate next to its database.
+            cmd.arg("--tls")
+                .args(["--smtps", &format!("0.0.0.0:{}", ports.smtps)])
+                .args(["--pop3s", &format!("0.0.0.0:{}", ports.pop3s)])
+                .args(["--imaps", &format!("0.0.0.0:{}", ports.imaps)]);
+        }
         #[cfg(windows)]
         {
             use std::os::windows::process::CommandExt;
@@ -228,7 +253,11 @@ impl Server {
                         };
                         match st.event.as_str() {
                             "ready" => {
-                                let p = st.addrs.as_ref().map(bound_ports).unwrap_or(ports);
+                                let p = st
+                                    .addrs
+                                    .as_ref()
+                                    .map(|a| bound_ports(a, ports))
+                                    .unwrap_or(ports);
                                 s.set_phase(
                                     &app,
                                     gen,
@@ -339,6 +368,7 @@ impl Server {
     pub fn stop(&self, app: &AppHandle) {
         let gen = {
             let mut i = lock(&self.inner);
+            i.quiet = false;
             if i.child.is_none() {
                 // Not running (maybe still checking ports): cancel that run.
                 i.gen += 1;
@@ -395,12 +425,15 @@ impl Server {
         i.phase = Phase::Stopped;
     }
 
-    pub fn restart(&self, app: &AppHandle, ports: Ports) {
+    /// Stops Envry and starts it again with the current settings. The
+    /// window keeps showing its page meanwhile, unless the new run fails.
+    pub fn restart(&self, app: &AppHandle) {
+        lock(&self.inner).quiet = true;
         let app = app.clone();
         thread::spawn(move || {
             let s = app.state::<Server>();
             s.stop_and_wait();
-            s.start(&app, ports);
+            s.start(&app);
         });
     }
 }
@@ -409,13 +442,20 @@ fn port_of(addr: &str) -> Option<u16> {
     addr.rsplit_once(':').and_then(|(_, p)| p.parse().ok())
 }
 
-fn bound_ports(a: &Addrs) -> Ports {
-    let d = Ports::default();
+/// The ports Envry reports it opened; `asked` fills in what it did not
+/// report (the SSL/TLS ports when secure connections are off).
+fn bound_ports(a: &Addrs, asked: Ports) -> Ports {
+    let tls = |addr: &Option<String>, fallback: u16| {
+        addr.as_deref().and_then(port_of).unwrap_or(fallback)
+    };
     Ports {
-        smtp: port_of(&a.smtp).unwrap_or(d.smtp),
-        pop3: port_of(&a.pop3).unwrap_or(d.pop3),
-        imap: port_of(&a.imap).unwrap_or(d.imap),
-        http: port_of(&a.http).unwrap_or(d.http),
+        smtp: port_of(&a.smtp).unwrap_or(asked.smtp),
+        pop3: port_of(&a.pop3).unwrap_or(asked.pop3),
+        imap: port_of(&a.imap).unwrap_or(asked.imap),
+        http: port_of(&a.http).unwrap_or(asked.http),
+        smtps: tls(&a.smtps, asked.smtps),
+        pop3s: tls(&a.pop3s, asked.pop3s),
+        imaps: tls(&a.imaps, asked.imaps),
     }
 }
 
@@ -437,7 +477,10 @@ mod tests {
             r#"{"event":"ready","version":"v0.2.0","addrs":{"http":"0.0.0.0:8025","smtp":"[::]:1025","pop3":"0.0.0.0:1110","imap":"0.0.0.0:1143"}}"#,
         )
         .unwrap();
-        assert_eq!(bound_ports(ready.addrs.as_ref().unwrap()), Ports::default());
+        assert_eq!(
+            bound_ports(ready.addrs.as_ref().unwrap(), Ports::default()),
+            Ports::default()
+        );
 
         let err: StatusLine = serde_json::from_str(
             r#"{"event":"error","message":"listen smtp 0.0.0.0:1025: in use","service":"smtp","addr":"0.0.0.0:1025","inUse":true,"hint":"Port 1025 (SMTP) is already in use."}"#,

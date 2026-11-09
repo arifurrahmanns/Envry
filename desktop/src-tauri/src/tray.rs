@@ -21,6 +21,7 @@ pub struct TrayMenu {
     smtp: MenuItem<Wry>,
     toggle: MenuItem<Wry>,
     restart: MenuItem<Wry>,
+    tls: CheckMenuItem<Wry>,
     notifications: CheckMenuItem<Wry>,
     autostart: CheckMenuItem<Wry>,
     update: MenuItem<Wry>,
@@ -59,6 +60,14 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
     let open = MenuItem::with_id(app, "open", "Open Envry", true, None::<&str>)?;
     let toggle = MenuItem::with_id(app, "toggle", "Stop server", true, None::<&str>)?;
     let restart = MenuItem::with_id(app, "restart", "Restart server", true, None::<&str>)?;
+    let tls = CheckMenuItem::with_id(
+        app,
+        "tls",
+        "Secure connections (TLS)",
+        true,
+        settings::get(app).tls,
+        None::<&str>,
+    )?;
     let notifications = CheckMenuItem::with_id(
         app,
         "notifications",
@@ -87,6 +96,7 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
             &PredefinedMenuItem::separator(app)?,
             &toggle,
             &restart,
+            &tls,
             &PredefinedMenuItem::separator(app)?,
             &notifications,
             &autostart,
@@ -120,6 +130,7 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
         smtp,
         toggle,
         restart,
+        tls,
         notifications,
         autostart,
         update,
@@ -134,9 +145,13 @@ fn on_menu(app: &AppHandle, id: &str) {
         "open" => window::show(app),
         "toggle" => match server.phase() {
             Phase::Running { .. } | Phase::Starting => server.stop(app),
-            _ => server.start(app, settings::get(app).ports),
+            _ => server.start(app),
         },
-        "restart" => server.restart(app, settings::get(app).ports),
+        "restart" => server.restart(app),
+        "tls" => {
+            let on = !settings::get(app).tls;
+            let _ = crate::commands::set_tls(app.clone(), on);
+        }
         "notifications" => {
             let on = settings::update(app, |s| {
                 s.notifications = !s.notifications;
@@ -209,6 +224,7 @@ pub fn refresh(app: &AppHandle) {
             .toggle
             .set_text(if busy { "Stop server" } else { "Start server" });
         let _ = m.restart.set_enabled(running);
+        let _ = m.tls.set_checked(settings::get(app).tls);
         let (text, enabled) = match &update {
             Status::Idle => ("Check for updates…".to_string(), true),
             Status::Checking => ("Checking for updates…".to_string(), false),

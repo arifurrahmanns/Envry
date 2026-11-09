@@ -16,7 +16,6 @@ use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_updater::{Update, UpdaterExt};
 
 use crate::server::Server;
-use crate::settings;
 
 const FIRST_CHECK: Duration = Duration::from_secs(30);
 const CHECK_EVERY: Duration = Duration::from_secs(6 * 60 * 60);
@@ -157,7 +156,7 @@ pub fn install(app: &AppHandle) {
                 *lock(&updates.ready) = Some((update, bytes));
                 updates.set(&app, Status::Ready(version));
                 notify(&app, "Couldn't install the update", &e.to_string());
-                app.state::<Server>().start(&app, settings::get(&app).ports);
+                app.state::<Server>().start(&app);
             }
         }
     });

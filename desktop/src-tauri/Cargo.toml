@@ -1,6 +1,6 @@
 [package]
 name = "envry-desktop"
-version = "0.2.1"
+version = "0.2.2"
 description = "Envry desktop app: runs the Envry mail server and shows its web UI"
 license = "MIT"
 repository = "https://github.com/arifurrahmanns/envry"
@@ -37,6 +37,7 @@ windows-core = "0.62"
 windows-sys = { version = "0.61", features = [
   "Win32_Foundation",
   "Win32_NetworkManagement_IpHelper",
+  "Win32_Security_Cryptography",
   "Win32_Networking_WinSock",
   "Win32_System_Threading",
 ] }

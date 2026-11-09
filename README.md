@@ -30,6 +30,7 @@
 - **POP3 and IMAP** access to every mailbox, so you can test code that receives mail.
 - **A mail-client interface**: Sent, Receivers and Inbox views, a reader with preview, text, source and header views, resizable panes, a composer for test emails, and light and dark themes that follow your system.
 - **Clear port conflicts.** If Mailpit or another Envry already uses a port, Envry names the program holding it and can move to other ports in one click.
+- **Encrypted connections when you need them.** One switch adds STARTTLS and SSL/TLS ports, and **Trust certificate** lets apps that check certificates connect without changes.
 - **Message checks** for a missing plain-text part, images without alt text, Gmail clipping, broken links and spam-prone headers.
 - **Failure simulation** to test how your application handles rejected recipients, temporary errors and slow servers.
 - **REST API and live events** so automated tests can wait for and assert on emails.
@@ -144,6 +145,7 @@ envry --tls
 - **Implicit TLS** is served on SMTPS `1465`, IMAPS `1993` and POP3S `1995` (`--smtps`, `--imaps`, `--pop3s` change them).
 - Without `--tls-cert` and `--tls-key`, Envry generates a self-signed certificate for `localhost`, `127.0.0.1` and `::1` and keeps it in a `tls` folder next to the database, so a mail client only has to accept it once. It is renewed automatically before it expires. The SHA-256 fingerprint is logged at startup and shown on the Connection page.
 - Authentication still works without TLS, so the same accounts can be used either way.
+- In the desktop app, **Secure connections** on the Connection page (or in the tray menu) turns TLS on and off. Apps that check certificates, as most mail libraries do, refuse a self-signed certificate, so **Trust certificate** on the same page adds Envry's to your trusted certificates after Windows asks you to confirm (macOS asks for your password). The certificate vouches only for Envry, never for other sites. On Linux, add `~/.envry/tls/cert.pem` to the system's trusted certificates yourself.
 
 ## Reading mail over POP3
 

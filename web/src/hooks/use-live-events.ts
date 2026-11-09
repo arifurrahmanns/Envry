@@ -30,7 +30,7 @@ export function useLiveEvents(onOpenMessage: (id: string) => void): LiveStatus {
   })
 
   useEffect(() => {
-    const conn = { ws: null as WebSocket | null, retry: 0, timer: 0, closed: false }
+    const conn = { ws: null as WebSocket | null, retry: 0, timer: 0, closed: false, opened: false }
 
     const invalidateMail = () => {
       void qc.invalidateQueries({ queryKey: ['messages'] })
@@ -75,8 +75,11 @@ export function useLiveEvents(onOpenMessage: (id: string) => void): LiveStatus {
       ws.onopen = () => {
         conn.retry = 0
         setStatus('live')
-        // Catch up on anything that arrived while disconnected.
+        // Catch up on anything that arrived while disconnected. A server that
+        // restarted may also have new settings, such as secure connections.
         invalidateMail()
+        if (conn.opened) void qc.invalidateQueries({ queryKey: ['info'] })
+        conn.opened = true
       }
       ws.onmessage = (e) => {
         try {

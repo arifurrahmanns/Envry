@@ -9,6 +9,10 @@
     "core:window:allow-internal-toggle-maximize",
     "core:window:allow-minimize",
     "core:window:allow-toggle-maximize",
-    "core:window:allow-close"
+    "core:window:allow-close",
+    "allow-get-status",
+    "allow-start-server",
+    "allow-save-ports",
+    "allow-open-log"
   ]
 }

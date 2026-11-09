@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "envry-ui",
-  "description": "Envry's web UI, served by the bundled server on 127.0.0.1, only drives the window frame from its title bar: drag, minimize, maximize and close. Emails render in sandboxed iframes without scripts, so they cannot reach these.",
+  "description": "Envry's web UI, served by the bundled server on 127.0.0.1: the window frame from its title bar (drag, minimize, maximize, close) and the secure-connections switch and certificate trust on the Connection page. Emails render in sandboxed iframes without scripts, so they cannot reach these.",
   "windows": ["main"],
   "remote": {
     "urls": ["http://127.0.0.1:*/*", "http://localhost:*/*"]
@@ -14,6 +14,9 @@
     "core:window:allow-internal-toggle-maximize",
     "core:window:allow-minimize",
     "core:window:allow-toggle-maximize",
-    "core:window:allow-close"
+    "core:window:allow-close",
+    "allow-set-tls",
+    "allow-certificate-status",
+    "allow-trust-certificate"
   ]
 }

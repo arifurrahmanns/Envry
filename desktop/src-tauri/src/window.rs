@@ -1,6 +1,8 @@
 //! The main window. It shows the bundled status page while Envry is not
 //! running, and Envry's own web UI (from 127.0.0.1) while it is.
 
+use std::sync::Mutex;
+
 use tauri::webview::NewWindowResponse;
 use tauri::window::Color;
 use tauri::{AppHandle, Manager, Url, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
@@ -64,8 +66,12 @@ pub fn create(app: &AppHandle, visible: bool) -> tauri::Result<()> {
     let builder = builder.decorations(false);
     let window = builder
         .on_navigation(move |url| {
+            // While Envry restarts its port is not known, so any local page
+            // counts as the UI (the page may reload during the restart).
+            let restarting = nav.state::<Server>().restarting();
             if is_status_page(&nav, url)
                 || is_ui(&nav, url)
+                || (restarting && is_local(url))
                 || matches!(url.scheme(), "about" | "data" | "blob")
             {
                 return true;
@@ -152,30 +158,72 @@ fn ui_port(app: &AppHandle) -> Option<u16> {
     }
 }
 
+/// A page served from this computer over plain HTTP, as Envry's UI is.
+fn is_local(url: &Url) -> bool {
+    url.scheme() == "http" && matches!(url.host_str(), Some("127.0.0.1") | Some("localhost"))
+}
+
 fn is_ui(app: &AppHandle, url: &Url) -> bool {
-    url.scheme() == "http"
-        && matches!(url.host_str(), Some("127.0.0.1") | Some("localhost"))
-        && url.port().is_some()
-        && url.port() == ui_port(app)
+    is_local(url) && url.port().is_some() && url.port() == ui_port(app)
+}
+
+/// The web UI page the window showed when Envry stopped, so a restart
+/// (after changing ports or secure connections) comes back to it.
+#[derive(Default)]
+pub struct LastPage(Mutex<Option<String>>);
+
+/// Path and query of a web UI address.
+fn page_of(url: &Url) -> String {
+    match url.query() {
+        Some(q) => format!("{}?{q}", url.path()),
+        None => url.path().to_string(),
+    }
 }
 
 /// Shows the web UI while Envry runs and the status page otherwise.
 pub fn follow(app: &AppHandle, phase: &Phase) {
     let Some(w) = main(app) else { return };
     let current = w.url().ok();
+    let last = app.state::<LastPage>();
+    let mut last = last.0.lock().unwrap_or_else(|e| e.into_inner());
     match phase {
         Phase::Running { ports, .. } => {
             let on_ui = current.as_ref().is_some_and(|u| is_ui(app, u));
             if !on_ui {
-                if let Ok(url) = Url::parse(&format!("http://127.0.0.1:{}/", ports.http)) {
+                // The page from before Envry stopped, or after a restart on
+                // another port the page the window still shows.
+                let page = last
+                    .take()
+                    .or_else(|| {
+                        current
+                            .as_ref()
+                            .filter(|u| is_local(u) && !is_status_page(app, u))
+                            .map(page_of)
+                    })
+                    .unwrap_or_else(|| "/".to_string());
+                if let Ok(url) = Url::parse(&format!("http://127.0.0.1:{}{page}", ports.http)) {
                     let _ = w.navigate(url);
                 }
             }
         }
         _ => {
-            if !current.as_ref().is_some_and(|u| is_status_page(app, u)) {
-                let _ = w.navigate(status_url(app));
+            // Restarting on request (a setting changed, or Restart in the
+            // tray): the page stays and reconnects once Envry is back.
+            if matches!(phase, Phase::Stopped | Phase::Starting)
+                && app.state::<Server>().restarting()
+            {
+                return;
             }
+            if let Some(u) = current.as_ref() {
+                if is_status_page(app, u) {
+                    return;
+                }
+                // Envry is no longer running, so this cannot check the port.
+                if is_local(u) {
+                    *last = Some(page_of(u));
+                }
+            }
+            let _ = w.navigate(status_url(app));
         }
     }
 }
